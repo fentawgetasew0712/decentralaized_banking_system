@@ -1,0 +1,99 @@
+:root {
+    --bg-color: #0d1117;
+    --card-bg: #161b22;
+    --text-primary: #c9d1d9;
+    --accent: #58a6ff;
+    --danger: #da3633;
+    --success: #238636;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.container {
+    max-width: 800px;
+    width: 100%;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 20px;
+}
+
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.balance-card {
+    background: linear-gradient(135deg, #1f6feb, #238636);
+    color: white;
+    text-align: center;
+    border-radius: 10px;
+    padding: 30px;
+    margin-bottom: 20px;
+}
+
+.balance-amount {
+    font-size: 3em;
+    font-weight: bold;
+}
+
+.hidden {
+    display: none;
+}
+
+.actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+input {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    color: white;
+    padding: 10px;
+    border-radius: 4px;
+    width: 100%;
+    margin-bottom: 10px;
+    box-sizing: border-box;
+}
+
+button {
+    cursor: pointer;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    width: 100%;
+}
+
+.btn-primary { background-color: var(--accent); color: white; }
+.btn-danger { background-color: var(--danger); color: white; }
+.btn-success { background-color: var(--success); color: white; }
+.refresh-btn { background: rgba(255,255,255,0.2); color: white; border: 1px solid white; margin-top: 10px; width: auto;}
+
+h3 { margin-top: 0; }
+
+#logs {
+    height: 150px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.9em;
+    color: #8b949e;
+}

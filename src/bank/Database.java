@@ -1,0 +1,228 @@
+package bank;
+
+import java.sql.*;
+// import java.util.*; -> Unused
+
+/**
+ * Database
+ * 
+ * Persistent Database using MySQL.
+ * Configured for XAMPP (root, no password).
+ * DISTRIBUTED VERSION: Each node has its own database instance.
+ */
+public class Database {
+
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/";
+    private static final String DB_BASE_NAME = "bank_system";
+    private static final String USER = "root";
+    private static final String PASS = "";
+
+    private Connection conn;
+    private String dbName;
+    private int nodeId;
+
+    public static class Account {
+        public String id;
+        public String name;
+        public String password;
+        public int balance;
+
+        public Account(String id, String name, String password, int balance) {
+            this.id = id;
+            this.name = name;
+            this.password = password;
+            this.balance = balance;
+        }
+    }
+
+    /**
+     * Constructor for distributed database.
+     * Each node gets its own database: bank_system_node1, bank_system_node2, etc.
+     */
+    public Database(int nodeId) {
+        this.nodeId = nodeId;
+        this.dbName = DB_BASE_NAME + "_node" + nodeId;
+        connect();
+        initDB();
+    }
+
+    /**
+     * Legacy constructor for backward compatibility (uses default database)
+     */
+    public Database() {
+        this.nodeId = 0;
+        this.dbName = DB_BASE_NAME;
+        connect();
+        initDB();
+    }
+
+    public String getDatabaseName() {
+        return dbName;
+    }
+
+    public int getNodeId() {
+        return nodeId;
+    }
+
+    private void connect() {
+        try {
+            // Explicitly load driver to ensure it's registered
+            Class.forName("com.mysql.cj.jdbc.Driver");
+
+            // Check if DB exists
+            Connection tempConn = DriverManager.getConnection(DB_URL, USER, PASS);
+            Statement stmt = tempConn.createStatement();
+            stmt.executeUpdate("CREATE DATABASE IF NOT EXISTS " + dbName);
+            stmt.close();
+            tempConn.close();
+
+            // Connect to actual DB
+            conn = DriverManager.getConnection(DB_URL + dbName, USER, PASS);
+            System.out.println("Database: Connected to MySQL (" + dbName + ")");
+        } catch (Exception e) {
+            System.err.println("Database Connection Error: " + e.getMessage());
+            System.err.println("Make sure MySQL (XAMPP) is running!");
+        }
+    }
+
+    private void initDB() {
+        if (conn == null)
+            return;
+        String sql = "CREATE TABLE IF NOT EXISTS users ("
+                + "id VARCHAR(12) PRIMARY KEY, "
+                + "name VARCHAR(100) NOT NULL, "
+                + "password VARCHAR(100) NOT NULL, "
+                + "balance INT DEFAULT 0)";
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute(sql);
+        } catch (SQLException e) {
+            System.err.println("Init DB Error: " + e.getMessage());
+        }
+    }
+
+    public synchronized boolean createAccount(String id, String name, String password, int initialBalance) {
+        if (conn == null)
+            return false;
+        String sql = "INSERT INTO users (id, name, password, balance) VALUES (?, ?, ?, ?)";
+        try (PreparedStatement admin = conn.prepareStatement(sql)) {
+            admin.setString(1, id);
+            admin.setString(2, name);
+            admin.setString(3, password);
+            admin.setInt(4, initialBalance);
+            admin.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            System.out.println("Create Account Error (might exist): " + e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean authenticate(String id, String password) {
+        if (conn == null)
+            return false;
+        String sql = "SELECT * FROM users WHERE id = ? AND password = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, id);
+            pstmt.setString(2, password);
+            ResultSet rs = pstmt.executeQuery();
+            return rs.next();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public Account getAccount(String id) {
+        if (conn == null)
+            return null;
+        String sql = "SELECT * FROM users WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, id);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return new Account(
+                        rs.getString("id"),
+                        rs.getString("name"),
+                        rs.getString("password"),
+                        rs.getInt("balance"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public int getBalance(String id) {
+        Account acc = getAccount(id);
+        return (acc != null) ? acc.balance : -1;
+    }
+
+    public boolean accountExists(String id) {
+        return getAccount(id) != null;
+    }
+
+    public synchronized void updateBalance(String id, int newBalance) {
+        if (conn == null)
+            return;
+        String sql = "UPDATE users SET balance = ? WHERE id = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, newBalance);
+            pstmt.setString(2, id);
+            pstmt.executeUpdate();
+            System.out.println("Database: Updated " + id + " -> $" + newBalance);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Get all accounts serialized as a string for synchronization.
+     * Format: id:name:pass:balance|id:name:pass:balance|...
+     */
+    public String getAllAccountsSerialized() {
+        if (conn == null)
+            return "";
+        StringBuilder sb = new StringBuilder();
+        String sql = "SELECT * FROM users";
+        try (Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                if (sb.length() > 0)
+                    sb.append("|");
+                sb.append(rs.getString("id")).append(":")
+                        .append(rs.getString("name")).append(":")
+                        .append(rs.getString("password")).append(":")
+                        .append(rs.getInt("balance"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Insert or Update account (Upsert) for synchronization
+     */
+    public synchronized void upsertAccount(String id, String name, String password, int balance) {
+        if (conn == null)
+            return;
+
+        // Try to update first
+        if (accountExists(id)) {
+            String sql = "UPDATE users SET name=?, password=?, balance=? WHERE id=?";
+            try (PreparedStatement admin = conn.prepareStatement(sql)) {
+                admin.setString(1, name);
+                admin.setString(2, password);
+                admin.setInt(3, balance);
+                admin.setString(4, id);
+                admin.executeUpdate();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        } else {
+            // Insert if not exists
+            createAccount(id, name, password, balance);
+        }
+    }
+}

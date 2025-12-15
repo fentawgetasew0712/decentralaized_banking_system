@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - Decentralized Bank</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="login-container">
+        <h1 style="color: var(--primary); margin-bottom: 2rem;">Create Account</h1>
+
+        <div class="input-group">
+            <label>Full Name</label>
+            <input type="text" id="fullname" placeholder="John Doe">
+        </div>
+
+        <div class="input-group">
+            <label>Account ID (12 Digits)</label>
+            <input type="text" id="accountId" placeholder="e.g. 100000000001">
+        </div>
+
+        <div class="input-group">
+            <label>Password</label>
+            <input type="password" id="password" placeholder="Create a password">
+        </div>
+
+        <div class="input-group">
+            <label>Initial Deposit (Min: 500)</label>
+            <input type="number" id="amount" placeholder="e.g. 1000">
+        </div>
+
+        <button onclick="register()" class="btn-primary" style="width: 100%; margin-top: 1rem;">Sign Up</button>
+
+        <p style="margin-top: 1rem; font-size: 0.9rem;">
+            Already have an account? <a href="login.html" style="color: var(--accent);">Login</a>
+        </p>
+
+        <p id="error-msg" style="color: var(--danger); margin-top: 10px;"></p>
+        <p id="success-msg" style="color: var(--success); margin-top: 10px;"></p>
+    </div>
+
+    <script>
+        async function register() {
+            const name = document.getElementById('fullname').value;
+            const id = document.getElementById('accountId').value;
+            const pass = document.getElementById('password').value;
+            const amount = document.getElementById('amount').value;
+            const errorMsg = document.getElementById('error-msg');
+            const successMsg = document.getElementById('success-msg');
+
+            errorMsg.innerText = "";
+            successMsg.innerText = "";
+
+            if (!name || !pass || !id || !amount) {
+                errorMsg.innerText = "All fields are required.";
+                return;
+            }
+
+            if (!/^\d{12}$/.test(id)) {
+                errorMsg.innerText = "Account ID must be exactly 12 digits.";
+                return;
+            }
+
+            if (parseInt(amount) <= 500) {
+                errorMsg.innerText = "Initial Deposit must be GREATER than 500.";
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, user: id, pass, amount })
+                });
+
+                const result = await response.text();
+
+                if (result.startsWith("OK")) {
+                    successMsg.innerText = "Account Created! Redirecting to login...";
+                    setTimeout(() => window.location.href = 'login.html', 2000);
+                } else {
+                    errorMsg.innerText = "Registration Failed: " + result;
+                }
+            } catch (err) {
+                errorMsg.innerText = "Error connecting to server.";
+            }
+        }
+    </script>
+</body>
+
+</html>

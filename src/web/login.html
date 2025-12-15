@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Decentralized Bank</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container" style="justify-content: center; height: 100vh;">
+        <div class="card" id="login-card" style="width: 100%; max-width: 400px; text-align: center;">
+            <h1 style="color: var(--primary); margin-bottom: 2rem;">Bank Login</h1>
+
+            <div class="input-group">
+                <label>Account ID (12 Digits)</label>
+                <input type="text" id="accountId" placeholder="Enter your 12-digit ID">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="password" placeholder="Enter your password">
+            </div>
+            <button onclick="login()" class="btn-primary" style="width: 100%; margin-top: 1rem;">Access Account</button>
+            <p style="margin-top: 1rem; font-size: 0.9rem;">
+                Don't have an account? <a href="signup.html" style="color: var(--accent);">Sign Up</a>
+            </p>
+            <p id="error-msg" style="color: var(--danger); margin-top: 1rem;"></p>
+        </div>
+    </div>
+
+    <script>
+        async function login() {
+            const userId = document.getElementById('accountId').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('error-msg');
+
+            errorMsg.innerText = "";
+
+            // 1. Validation Logic
+            if (!/^\d{12}$/.test(userId)) {
+                errorMsg.innerText = "Error: Account ID must be exactly 12 digits.";
+                return;
+            }
+            if (!password) {
+                errorMsg.innerText = "Error: Password is required.";
+                return;
+            }
+
+            // 2. Call API
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user: userId, pass: password })
+                });
+
+                const result = await response.text();
+                // Expected format: OK:LOGIN_SUCCESS:Name
+                if (result.startsWith("OK:LOGIN_SUCCESS")) {
+                    const parts = result.split(":");
+                    const name = parts[2];
+                    localStorage.setItem('currentUser', userId);
+                    localStorage.setItem('currentUserName', name);
+                    window.location.href = 'dashboard.html';
+                } else {
+                    errorMsg.innerText = "Login Failed: " + result;
+                }
+            } catch (err) {
+                errorMsg.innerText = "Error connecting to server.";
+            }
+        }
+    </script>
+</body>
+
+</html>

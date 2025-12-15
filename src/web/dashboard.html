@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Decentralized Bank</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Decentralized Banking</h1>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <div id="status-bar"><span id="welcome-msg"
+                        style="font-weight: bold; color: var(--accent);">Welcome...</span></div>
+                <button onclick="logout()" class="btn-danger"
+                    style="padding: 0.5rem 1rem; font-size: 0.9rem;">Logout</button>
+            </div>
+        </header>
+
+        <main>
+            <div id="dashboard">
+                <div class="balance-card">
+                    <h3>Current Balance</h3>
+                    <div class="balance-amount">$<span id="balance">Loading...</span></div>
+                    <button class="refresh-btn" onclick="refreshBalance()">↻ Refresh</button>
+                </div>
+
+                <div class="actions-grid">
+                    <div class="card action-card">
+                        <h3>Withdraw</h3>
+                        <input type="number" id="withdraw-amount" placeholder="Amount">
+                        <button class="btn-danger" onclick="performAction('WITHDRAW')">Withdraw</button>
+                    </div>
+
+                    <div class="card action-card">
+                        <h3>Deposit</h3>
+                        <input type="number" id="deposit-amount" placeholder="Amount">
+                        <button class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
+                    </div>
+
+                    <div class="card action-card" style="grid-column: span 2;">
+                        <h3>Transfer</h3>
+                        <div class="input-group">
+                            <input type="text" id="transfer-target" placeholder="Recipient Account (e.g. user2)">
+                            <input type="number" id="transfer-amount" placeholder="Amount">
+                            <button class="btn-primary" onclick="performAction('TRANSFER')">Transfer Funds</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card log-card">
+                    <h3>Recent Logs</h3>
+                    <div id="logs"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Get user from storage
+        const currentUser = localStorage.getItem('currentUser');
+        const currentUserName = localStorage.getItem('currentUserName');
+
+        if (!currentUser) {
+            window.location.href = 'login.html'; // Redirect to login if no user
+        }
+
+        document.getElementById('welcome-msg').innerText = "Welcome, " + (currentUserName || currentUser) + " (" + currentUser + ")";
+
+        // Initial Load
+        refreshBalance();
+
+        async function logout() {
+            try {
+                // Call backend to release session lock
+                await fetch('/api/logout', {
+                    method: 'POST',
+                    body: JSON.stringify({ user: currentUser })
+                });
+            } catch (e) {
+                console.error("Logout failed on server", e);
+            }
+
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('currentUserName');
+            window.location.href = 'login.html';
+        }
+
+        async function refreshBalance() {
+            const btn = document.querySelector('.refresh-btn');
+            const originalText = btn.innerText;
+            btn.innerText = "↻ ...";
+            btn.disabled = true;
+
+            try {
+                // Add timestamp to prevent caching
+                const res = await fetch(`/api/balance?user=${currentUser}&t=${Date.now()}`);
+                if (res.status !== 200) throw new Error("Failed");
+                const data = await res.text();
+                document.getElementById('balance').innerText = data;
+                log("Balance updated: $" + data);
+            } catch (e) {
+                document.getElementById('balance').innerText = "Error";
+                log("Error: Could not connect to Bank Node.");
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        async function performAction(type) {
+            let amount, target = '';
+
+            if (type === 'WITHDRAW') amount = document.getElementById('withdraw-amount').value;
+            if (type === 'DEPOSIT') amount = document.getElementById('deposit-amount').value;
+            if (type === 'TRANSFER') {
+                amount = document.getElementById('transfer-amount').value;
+                target = document.getElementById('transfer-target').value;
+            }
+
+            if (!amount) {
+                alert("Please enter an amount");
+                return;
+            }
+            if (type === 'TRANSFER' && !target) {
+                alert("Please enter a recipient");
+                return;
+            }
+
+            log(`Requesting ${type} for ${currentUser}...`);
+
+            try {
+                const res = await fetch('/api/action', {
+                    method: 'POST',
+                    body: JSON.stringify({ type, user: currentUser, amount, target })
+                });
+                const result = await res.text();
+                log(result);
+
+                // Poll for balance update
+                setTimeout(refreshBalance, 2000);
+                setTimeout(refreshBalance, 5000); // Double check
+            } catch (e) {
+                log("Action failed: Network Error");
+            }
+        }
+
+        function log(msg) {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.innerText = `> ${msg}`;
+            logs.insertBefore(entry, logs.firstChild);
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decentralized Bank</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Decentralized Banking</h1>
+            <div id="status-bar">Node Status: <span id="node-status">Checking...</span></div>
+        </header>
+
+        <main>
+            <!-- Login Selection -->
+            <div class="card" id="login-card">
+                <h2>Select User</h2>
+                <div class="input-group">
+                    <input type="text" id="username" placeholder="e.g. user1" value="user1">
+                    <button onclick="login()">Connect</button>
+                </div>
+            </div>
+
+            <!-- Dashboard (Hidden until login) -->
+            <div id="dashboard" class="hidden">
+                <div class="balance-card">
+                    <h3>Current Balance</h3>
+                    <div class="balance-amount">$<span id="balance">---</span></div>
+                    <button class="refresh-btn" onclick="refreshBalance()">↻ Refresh</button>
+                </div>
+
+                <div class="actions-grid">
+                    <div class="card action-card">
+                        <h3>Withdraw</h3>
+                        <input type="number" id="withdraw-amount" placeholder="Amount">
+                        <button class="btn-danger" onclick="performAction('WITHDRAW')">Withdraw</button>
+                    </div>
+
+                    <div class="card action-card">
+                        <h3>Deposit</h3>
+                        <input type="number" id="deposit-amount" placeholder="Amount">
+                        <button class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
+                    </div>
+
+                    <div class="card action-card" style="grid-column: span 2;">
+                        <h3>Transfer</h3>
+                        <div class="input-group">
+                            <input type="text" id="transfer-target" placeholder="Recipient (e.g. user2)">
+                            <input type="number" id="transfer-amount" placeholder="Amount">
+                            <button class="btn-primary" onclick="performAction('TRANSFER')">Transfer Funds</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card log-card">
+                    <h3>Recent Logs</h3>
+                    <div id="logs"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let currentUser = 'user1';
+
+        function login() {
+            currentUser = document.getElementById('username').value;
+            document.getElementById('login-card').style.display = 'none';
+            document.getElementById('dashboard').classList.remove('hidden');
+            log(`Logged in as ${currentUser}`);
+            refreshBalance();
+        }
+
+        async function refreshBalance() {
+            try {
+                const res = await fetch(`/api/balance?user=${currentUser}`);
+                const data = await res.text();
+                document.getElementById('balance').innerText = data;
+            } catch (e) {
+                log("Error fetching balance");
+            }
+        }
+
+        async function performAction(type) {
+            let amount, target = '';
+
+            if (type === 'WITHDRAW') amount = document.getElementById('withdraw-amount').value;
+            if (type === 'DEPOSIT') amount = document.getElementById('deposit-amount').value;
+            if (type === 'TRANSFER') {
+                amount = document.getElementById('transfer-amount').value;
+                target = document.getElementById('transfer-target').value;
+            }
+
+            if (!amount) {
+                alert("Please enter an amount");
+                return;
+            }
+
+            log(`Requesting ${type}...`);
+
+            try {
+                const res = await fetch('/api/action', {
+                    method: 'POST',
+                    body: JSON.stringify({ type, user: currentUser, amount, target })
+                });
+                const result = await res.text();
+
+                if (result.includes("INSUFFICIENT_FUNDS")) {
+                    log("❌ Transaction Failed: Not enough money!");
+                    alert("Transaction Failed: Insufficient Funds (Not enough money)");
+                } else if (result.startsWith("FAIL")) {
+                    log("❌ Failed: " + result);
+                    alert("Transaction Failed: " + result.replace("FAIL:", ""));
+                } else {
+                    log("✅ " + result);
+                }
+
+                setTimeout(refreshBalance, 1000);
+            } catch (e) {
+                log("Action failed");
+            }
+        }
+
+        function log(msg) {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.innerText = `> ${msg}`;
+            logs.insertBefore(entry, logs.firstChild);
+        }
+    </script>
+</body>
+
+</html>
