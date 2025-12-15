@@ -36,7 +36,7 @@ header {
     border-radius: 6px;
     padding: 20px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .balance-card {
@@ -83,12 +83,32 @@ button {
     width: 100%;
 }
 
-.btn-primary { background-color: var(--accent); color: white; }
-.btn-danger { background-color: var(--danger); color: white; }
-.btn-success { background-color: var(--success); color: white; }
-.refresh-btn { background: rgba(255,255,255,0.2); color: white; border: 1px solid white; margin-top: 10px; width: auto;}
+.btn-primary {
+    background-color: var(--accent);
+    color: white;
+}
 
-h3 { margin-top: 0; }
+.btn-danger {
+    background-color: var(--danger);
+    color: white;
+}
+
+.btn-success {
+    background-color: var(--success);
+    color: white;
+}
+
+.refresh-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid white;
+    margin-top: 10px;
+    width: auto;
+}
+
+h3 {
+    margin-top: 0;
+}
 
 #logs {
     height: 150px;

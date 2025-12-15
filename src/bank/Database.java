@@ -88,13 +88,24 @@ public class Database {
     private void initDB() {
         if (conn == null)
             return;
-        String sql = "CREATE TABLE IF NOT EXISTS users ("
+        String sqlUsers = "CREATE TABLE IF NOT EXISTS users ("
                 + "id VARCHAR(12) PRIMARY KEY, "
                 + "name VARCHAR(100) NOT NULL, "
                 + "password VARCHAR(100) NOT NULL, "
                 + "balance INT DEFAULT 0)";
+
+        String sqlTrans = "CREATE TABLE IF NOT EXISTS transactions ("
+                + "id INT AUTO_INCREMENT PRIMARY KEY, "
+                + "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                + "type VARCHAR(20), "
+                + "user_id VARCHAR(12), "
+                + "amount VARCHAR(20), "
+                + "target_id VARCHAR(12), "
+                + "node_id INT)";
+
         try (Statement stmt = conn.createStatement()) {
-            stmt.execute(sql);
+            stmt.execute(sqlUsers);
+            stmt.execute(sqlTrans);
         } catch (SQLException e) {
             System.err.println("Init DB Error: " + e.getMessage());
         }
@@ -224,5 +235,86 @@ public class Database {
             // Insert if not exists
             createAccount(id, name, password, balance);
         }
+    }
+
+    public static class Transaction {
+        public int id;
+        public String timestamp;
+        public String type;
+        public String userId;
+        public String amount;
+        public String targetId;
+        public int nodeId;
+
+        public Transaction(int id, String timestamp, String type, String userId, String amount, String targetId,
+                int nodeId) {
+            this.id = id;
+            this.timestamp = timestamp;
+            this.type = type;
+            this.userId = userId;
+            this.amount = amount;
+            this.targetId = targetId;
+            this.nodeId = nodeId;
+        }
+    }
+
+    public synchronized void logTransaction(String type, String userId, String amount, String targetId) {
+        if (conn == null)
+            return;
+        String sql = "INSERT INTO transactions (type, user_id, amount, target_id, node_id) VALUES (?, ?, ?, ?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, type);
+            pstmt.setString(2, userId);
+            pstmt.setString(3, amount);
+            pstmt.setString(4, targetId != null ? targetId : "");
+            pstmt.setInt(5, nodeId);
+            pstmt.executeUpdate();
+            System.out.println("📝 Database: Logged " + type + " for " + userId);
+        } catch (SQLException e) {
+            System.err.println("Log Error: " + e.getMessage());
+        }
+    }
+
+    public java.util.List<Transaction> getAllTransactions() {
+        java.util.List<Transaction> list = new java.util.ArrayList<>();
+        if (conn == null)
+            return list;
+        String sql = "SELECT * FROM transactions ORDER BY id DESC LIMIT 50";
+        try (Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                list.add(new Transaction(
+                        rs.getInt("id"),
+                        rs.getString("timestamp"),
+                        rs.getString("type"),
+                        rs.getString("user_id"),
+                        rs.getString("amount"),
+                        rs.getString("target_id"),
+                        rs.getInt("node_id")));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
+
+    public java.util.List<Account> getAllUsers() {
+        java.util.List<Account> list = new java.util.ArrayList<>();
+        if (conn == null)
+            return list;
+        String sql = "SELECT * FROM users";
+        try (Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                list.add(new Account(
+                        rs.getString("id"),
+                        rs.getString("name"),
+                        rs.getString("password"),
+                        rs.getInt("balance")));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return list;
     }
 }

@@ -56,6 +56,10 @@ public class ATMNode extends RicartNode {
         this.opTarget = target;
     }
 
+    public Database getLocalDB() {
+        return localDB;
+    }
+
     /**
      * Check balance from LOCAL database
      */
@@ -144,122 +148,6 @@ public class ATMNode extends RicartNode {
     /**
      * Critical Section - Execute transaction and replicate
      */
-    @Override
-    protected void onCriticalSection() {
-        System.out.println(">>> ATM " + getNodeId() + " ENTERING CRITICAL SECTION <<<");
-
-        try {
-            if (opAmount == null || opUser == null) {
-                // Determine if this is a test request
-                System.out.println("  (Ignoring Critical Section for internal/test request)");
-                return;
-            }
-
-            if ("WITHDRAW".equals(nextOperation)) {
-                processWithdraw();
-            } else if ("DEPOSIT".equals(nextOperation)) {
-                processDeposit();
-            } else if ("TRANSFER".equals(nextOperation)) {
-                processTransfer();
-            }
-        } catch (Exception e) {
-            System.err.println("Error in critical section: " + e.getMessage());
-            lastTransactionResult = "ERROR:TRANSACTION_FAILED";
-        }
-    }
-
-    /**
-     * Process withdrawal with replication
-     */
-    private void processWithdraw() {
-        int amount = Integer.parseInt(opAmount);
-        int currentBalance = localDB.getBalance(opUser);
-
-        if (currentBalance == -1) {
-            lastTransactionResult = "FAIL:USER_NOT_FOUND";
-            return;
-        }
-
-        if (currentBalance >= amount) {
-            int newBalance = currentBalance - amount;
-
-            // Update LOCAL database
-            localDB.updateBalance(opUser, newBalance);
-
-            // REPLICATE to all peers
-            String replicationMsg = "REPLICATE_UPDATE:" + opUser + ":" + newBalance;
-            broadcastReplication(replicationMsg);
-
-            lastTransactionResult = "OK:NEW_BALANCE=" + newBalance;
-            System.out.println("✅ ATM " + getNodeId() + ": Withdrawal successful and replicated");
-        } else {
-            lastTransactionResult = "FAIL:INSUFFICIENT_FUNDS";
-        }
-    }
-
-    /**
-     * Process deposit with replication
-     */
-    private void processDeposit() {
-        int amount = Integer.parseInt(opAmount);
-        int currentBalance = localDB.getBalance(opUser);
-
-        if (currentBalance == -1) {
-            lastTransactionResult = "FAIL:USER_NOT_FOUND";
-            return;
-        }
-
-        int newBalance = currentBalance + amount;
-
-        // Update LOCAL database
-        localDB.updateBalance(opUser, newBalance);
-
-        // REPLICATE to all peers
-        String replicationMsg = "REPLICATE_UPDATE:" + opUser + ":" + newBalance;
-        broadcastReplication(replicationMsg);
-
-        lastTransactionResult = "OK:NEW_BALANCE=" + newBalance;
-        System.out.println("✅ ATM " + getNodeId() + ": Deposit successful and replicated");
-    }
-
-    /**
-     * Process transfer with replication
-     */
-    private void processTransfer() {
-        int amount = Integer.parseInt(opAmount);
-        int fromBalance = localDB.getBalance(opUser);
-
-        if (fromBalance == -1) {
-            lastTransactionResult = "FAIL:SENDER_NOT_FOUND";
-            return;
-        }
-
-        if (!localDB.accountExists(opTarget)) {
-            lastTransactionResult = "FAIL:RECIPIENT_NOT_FOUND";
-            return;
-        }
-
-        if (fromBalance >= amount) {
-            int newFromBalance = fromBalance - amount;
-            int toBalance = localDB.getBalance(opTarget);
-            int newToBalance = toBalance + amount;
-
-            // Update LOCAL database
-            localDB.updateBalance(opUser, newFromBalance);
-            localDB.updateBalance(opTarget, newToBalance);
-
-            // REPLICATE both updates to all peers
-            String replicationMsg1 = "REPLICATE_UPDATE:" + opUser + ":" + newFromBalance;
-            String replicationMsg2 = "REPLICATE_UPDATE:" + opTarget + ":" + newToBalance;
-            broadcastReplication(replicationMsg1);
-            broadcastReplication(replicationMsg2);
-
-            lastTransactionResult = "OK:TRANSFERRED_$" + amount;
-            System.out.println("✅ ATM " + getNodeId() + ": Transfer successful and replicated");
-        } else {
-            lastTransactionResult = "FAIL:INSUFFICIENT_FUNDS";
-        }
-    }
 
     /**
      * Broadcast replication message to all peer nodes
@@ -548,5 +436,99 @@ public class ATMNode extends RicartNode {
     @Override
     protected void onReplicationMessage(String message) {
         handleReplicationMessage(message);
+    }
+
+    /**
+     * CRITICAL SECTION: Perform the actual banking operation safely
+     * This is guaranteed to run on only ONE node at a time (or sequential)
+     * thanks to Ricart-Agrawala.
+     */
+    @Override
+    protected void onCriticalSection() {
+        System.out.println("⚡ CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
+
+        try {
+            // 1. DEPOSIT
+            if ("DEPOSIT".equals(nextOperation)) {
+                int currentBalance = localDB.getBalance(opUser);
+                if (currentBalance != -1) {
+                    int amountObj = Integer.parseInt(opAmount);
+                    int newBalance = currentBalance + amountObj;
+                    localDB.updateBalance(opUser, newBalance);
+
+                    // Broadcast replication
+                    broadcastReplication("REPLICATE_UPDATE:" + opUser + ":" + newBalance);
+
+                    // LOG TRANSACTION
+                    localDB.logTransaction("DEPOSIT", opUser, opAmount, null);
+
+                    lastTransactionResult = "OK:DEPOSIT_SUCCESS:NewBalance=" + newBalance;
+                    System.out.println("✅ ATM " + getNodeId() + ": Deposited $" + amountObj + " to " + opUser);
+                } else {
+                    lastTransactionResult = "FAIL:USER_NOT_FOUND";
+                }
+            }
+
+            // 2. WITHDRAW
+            else if ("WITHDRAW".equals(nextOperation)) {
+                int currentBalance = localDB.getBalance(opUser);
+                if (currentBalance != -1) {
+                    int amountObj = Integer.parseInt(opAmount);
+                    if (currentBalance >= amountObj) {
+                        int newBalance = currentBalance - amountObj;
+                        localDB.updateBalance(opUser, newBalance);
+
+                        // Broadcast replication
+                        broadcastReplication("REPLICATE_UPDATE:" + opUser + ":" + newBalance);
+
+                        // LOG TRANSACTION
+                        localDB.logTransaction("WITHDRAW", opUser, opAmount, null);
+
+                        lastTransactionResult = "OK:WITHDRAW_SUCCESS:NewBalance=" + newBalance;
+                        System.out.println("✅ ATM " + getNodeId() + ": Withdrew $" + amountObj + " from " + opUser);
+                    } else {
+                        lastTransactionResult = "FAIL:INSUFFICIENT_FUNDS";
+                    }
+                } else {
+                    lastTransactionResult = "FAIL:USER_NOT_FOUND";
+                }
+            }
+
+            // 3. TRANSFER
+            else if ("TRANSFER".equals(nextOperation)) {
+                int amountObj = Integer.parseInt(opAmount);
+                int senderBalance = localDB.getBalance(opUser);
+                int receiverBalance = localDB.getBalance(opTarget);
+
+                // Validate sender has funds AND receiver exists
+                if (senderBalance != -1 && receiverBalance != -1 && senderBalance >= amountObj) {
+                    int newSenderBalance = senderBalance - amountObj;
+                    int newReceiverBalance = receiverBalance + amountObj;
+
+                    localDB.updateBalance(opUser, newSenderBalance);
+                    localDB.updateBalance(opTarget, newReceiverBalance);
+
+                    // REPLICATE BOTH
+                    broadcastReplication("REPLICATE_UPDATE:" + opUser + ":" + newSenderBalance);
+                    broadcastReplication("REPLICATE_UPDATE:" + opTarget + ":" + newReceiverBalance);
+
+                    // LOG TRANSACTION
+                    localDB.logTransaction("TRANSFER", opUser, opAmount, opTarget);
+
+                    lastTransactionResult = "OK:TRANSFER_SUCCESS:NewBalance=" + newSenderBalance;
+                    System.out.println("✅ ATM " + getNodeId() + ": Transferred $" + amountObj + " from " + opUser
+                            + " to " + opTarget);
+                } else {
+                    if (receiverBalance == -1) {
+                        lastTransactionResult = "FAIL:RECEIVER_NOT_FOUND";
+                    } else {
+                        lastTransactionResult = "FAIL:INSUFFICIENT_FUNDS";
+                    }
+                }
+            }
+        } catch (Exception e) {
+            lastTransactionResult = "FAIL:EXCEPTION:" + e.getMessage();
+            e.printStackTrace();
+        }
     }
 }

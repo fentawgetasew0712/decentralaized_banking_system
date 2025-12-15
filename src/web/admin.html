@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Portal - Decentralized Bank</title>
+    <link rel="stylesheet" href="admin-style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <h2 style="color: var(--accent);">ADMIN PORTAL</h2>
+                <span class="badge badge-TRANSFER">Node 1</span>
+            </div>
+            <button onclick="logout()" class="btn-danger" style="width: auto; padding: 0.5rem 1.5rem;">Secure
+                Exit</button>
+        </header>
+
+        <!-- Stats Row -->
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2rem;">
+            <div class="card" style="text-align: center;">
+                <h3 style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase;">Total Reserves
+                </h3>
+                <div class="balance-amount" style="font-size: 2.5rem;" id="stat-reserves">$0</div>
+            </div>
+            <div class="card" style="text-align: center;">
+                <h3 style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase;">Active Users
+                </h3>
+                <div class="balance-amount" style="font-size: 2.5rem;" id="stat-users">0</div>
+            </div>
+            <div class="card" style="text-align: center;">
+                <h3 style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase;">Total
+                    Transactions</h3>
+                <div class="balance-amount" style="font-size: 2.5rem;" id="stat-tx">0</div>
+            </div>
+        </div>
+
+        <div class="grid-2" style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+            <!-- Left: Transaction Logs -->
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3>Live Transaction Feed</h3>
+                    <button onclick="loadAll()" class="btn-primary"
+                        style="width: auto; padding: 0.5rem 1rem; font-size: 0.8rem;">Refresh Data</button>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table id="logs-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Time</th>
+                                <th>Type</th>
+                                <th>User</th>
+                                <th>Amount</th>
+                                <th>Target</th>
+                                <th>Node</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="7" style="text-align:center; color: var(--text-secondary);">Connecting to
+                                    Distributed Ledger...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right: User Monitor -->
+            <div class="card">
+                <h3>User Directory</h3>
+                <div style="overflow-x: auto; margin-top: 1rem;">
+                    <table id="users-table">
+                        <thead>
+                            <tr>
+                                <th>User ID</th>
+                                <th>Name</th>
+                                <th>Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="3" style="text-align:center;">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        if (!localStorage.getItem('adminAuth')) {
+            window.location.href = 'admin_login.html';
+        }
+
+        function logout() {
+            localStorage.removeItem('adminAuth');
+            window.location.href = 'admin_login.html';
+        }
+
+        async function loadAll() {
+            loadStats();
+            loadLogs();
+            loadUsers();
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/admin/stats');
+                const stats = await res.json();
+                document.getElementById('stat-users').innerText = stats.totalUsers;
+                document.getElementById('stat-reserves').innerText = '$' + stats.totalReserves;
+                document.getElementById('stat-tx').innerText = stats.totalTransactions;
+            } catch (e) {
+                console.error("Stats Error:", e);
+            }
+        }
+
+        async function loadLogs() {
+            try {
+                const res = await fetch('/api/admin/logs');
+                const logs = await res.json();
+                const tbody = document.querySelector('#logs-table tbody');
+                tbody.innerHTML = '';
+
+                if (logs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No transaction history found on this node.</td></tr>';
+                    return;
+                }
+
+                logs.forEach(log => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="color: var(--text-secondary); font-family: monospace;">#${log.id}</td>
+                        <td style="font-size: 0.85rem;">${log.timestamp}</td>
+                        <td><span class="badge badge-${log.type}">${log.type}</span></td>
+                        <td>${log.user}</td>
+                        <td style="font-weight:bold; color: var(--text-primary);">$${log.amount}</td>
+                        <td>${log.target || '-'}</td>
+                        <td><span style="color: var(--text-secondary);">Node ${log.node}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function loadUsers() {
+            try {
+                const res = await fetch('/api/admin/users');
+                const users = await res.json();
+                const tbody = document.querySelector('#users-table tbody');
+                tbody.innerHTML = '';
+
+                users.forEach(u => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="font-family: monospace;">${u.id}</td>
+                        <td>${u.name}</td>
+                        <td style="color: var(--success); font-weight: bold;">$${u.balance}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // Initial Load
+        loadAll();
+        // Auto-refresh every 5s
+        setInterval(loadAll, 5000);
+    </script>
+</body>
+
+</html>

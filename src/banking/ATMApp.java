@@ -99,6 +99,7 @@ public class ATMApp {
 
             System.out.println("=================================================");
             System.out.println("OPEN YOUR BROWSER: http://localhost:" + webPort);
+            System.out.println("ADMIN PANEL:       http://localhost:" + webPort + "/admin_login.html");
             System.out.println("=================================================");
 
         } catch (IOException e) {

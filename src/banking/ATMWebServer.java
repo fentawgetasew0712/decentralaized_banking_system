@@ -33,6 +33,12 @@ public class ATMWebServer {
         server.createContext("/api/logout", new LogoutHandler());
         server.createContext("/api/register", new RegisterHandler());
 
+        // Admin Endpoints
+        server.createContext("/api/admin/login", new AdminLoginHandler());
+        server.createContext("/api/admin/logs", new AdminLogsHandler());
+        server.createContext("/api/admin/users", new AdminUsersHandler());
+        server.createContext("/api/admin/stats", new AdminStatsHandler());
+
         server.setExecutor(null);
         server.start();
         System.out.println(">>> Web Server started at http://localhost:" + port + " <<<");
@@ -241,6 +247,116 @@ public class ATMWebServer {
                 os.write(response.getBytes());
                 os.close();
             }
+        }
+    }
+
+    // ================= ADMIN HANDLERS =================
+
+    class AdminLoginHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange t) throws IOException {
+            if ("POST".equals(t.getRequestMethod())) {
+                InputStreamReader isr = new InputStreamReader(t.getRequestBody(), "utf-8");
+                BufferedReader br = new BufferedReader(isr);
+                StringBuilder buf = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) {
+                    buf.append(line);
+                }
+                String json = buf.toString();
+                String pass = extractJson(json, "password");
+
+                String response = "FAIL";
+                // Hardcoded Admin Password for prototype
+                if ("admin123".equals(pass)) {
+                    response = "OK";
+                }
+
+                t.sendResponseHeaders(200, response.length());
+                OutputStream os = t.getResponseBody();
+                os.write(response.getBytes());
+                os.close();
+            }
+        }
+    }
+
+    class AdminLogsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange t) throws IOException {
+            java.util.List<bank.Database.Transaction> logs = atmNode.getLocalDB().getAllTransactions();
+            StringBuilder json = new StringBuilder("[");
+            for (int i = 0; i < logs.size(); i++) {
+                bank.Database.Transaction tx = logs.get(i);
+                json.append("{")
+                        .append("\"id\":").append(tx.id).append(",")
+                        .append("\"timestamp\":\"").append(tx.timestamp).append("\",")
+                        .append("\"type\":\"").append(tx.type).append("\",")
+                        .append("\"user\":\"").append(tx.userId).append("\",")
+                        .append("\"amount\":\"").append(tx.amount).append("\",")
+                        .append("\"target\":\"").append(tx.targetId).append("\",")
+                        .append("\"node\":").append(tx.nodeId)
+                        .append("}");
+                if (i < logs.size() - 1)
+                    json.append(",");
+            }
+            json.append("]");
+
+            byte[] bytes = json.toString().getBytes("UTF-8");
+            t.sendResponseHeaders(200, bytes.length);
+            OutputStream os = t.getResponseBody();
+            os.write(bytes);
+            os.close();
+        }
+    }
+
+    class AdminUsersHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange t) throws IOException {
+            java.util.List<bank.Database.Account> users = atmNode.getLocalDB().getAllUsers();
+            StringBuilder json = new StringBuilder("[");
+            for (int i = 0; i < users.size(); i++) {
+                bank.Database.Account acc = users.get(i);
+                json.append("{")
+                        .append("\"id\":\"").append(acc.id).append("\",")
+                        .append("\"name\":\"").append(acc.name).append("\",")
+                        .append("\"balance\":").append(acc.balance)
+                        .append("}");
+                if (i < users.size() - 1)
+                    json.append(",");
+            }
+            json.append("]");
+
+            byte[] bytes = json.toString().getBytes("UTF-8");
+            t.sendResponseHeaders(200, bytes.length);
+            OutputStream os = t.getResponseBody();
+            os.write(bytes);
+            os.close();
+        }
+    }
+
+    class AdminStatsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange t) throws IOException {
+            java.util.List<bank.Database.Account> users = atmNode.getLocalDB().getAllUsers();
+            java.util.List<bank.Database.Transaction> logs = atmNode.getLocalDB().getAllTransactions();
+
+            long totalReserves = 0;
+            for (bank.Database.Account acc : users) {
+                totalReserves += acc.balance;
+            }
+
+            StringBuilder json = new StringBuilder();
+            json.append("{")
+                    .append("\"totalUsers\":").append(users.size()).append(",")
+                    .append("\"totalReserves\":").append(totalReserves).append(",")
+                    .append("\"totalTransactions\":").append(logs.size())
+                    .append("}");
+
+            byte[] bytes = json.toString().getBytes("UTF-8");
+            t.sendResponseHeaders(200, bytes.length);
+            OutputStream os = t.getResponseBody();
+            os.write(bytes);
+            os.close();
         }
     }
 }
