@@ -1,11 +1,17 @@
 @echo off
+echo Compiling ATM Project...
 if not exist "bin" mkdir bin
-echo Compiling...
-javac -cp ".;lib\mysql-connector-j-9.2.0.jar" -d bin src/bank/*.java src/banking/*.java src/algorithm/*.java src/banking/*.java
+
+cd src
+echo Compiling from src directory...
+javac -cp "..\lib\*;." -d ..\bin algorithm\*.java bank\*.java banking\*.java
+
 if %errorlevel% neq 0 (
     echo Compilation Failed!
-    pause
+    cd ..
     exit /b %errorlevel%
 )
-echo Compilation Successful!
+
+echo Compilation Successful.
+cd ..
 pause

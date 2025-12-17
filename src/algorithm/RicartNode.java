@@ -143,6 +143,12 @@ public class RicartNode {
                     return;
                 }
 
+                // Check for LOGS messages (New Feature: Admin Distributed Logs)
+                if (message.startsWith("QUERY_TRANSACTION_LOGS")) {
+                    onLogQuery(out);
+                    return;
+                }
+
                 String[] parts = message.split(":");
                 String msgType = parts[0];
                 int receivedTimestamp = Integer.parseInt(parts[1]);
@@ -208,6 +214,9 @@ public class RicartNode {
         repliesReceived++;
         System.out.println("Node " + nodeId + " received REPLY from " + senderId +
                 " (Total replies: " + repliesReceived + "/" + (N - 1) + ")");
+
+        // Notify the waiting thread in requestAccess that a reply has arrived
+        this.notifyAll();
     }
 
     private void enterCriticalSection() {
@@ -258,22 +267,26 @@ public class RicartNode {
             }
         }
 
-        // TIMEOUT LOGIC: Wait for replies, if too long, proceed anyway (Assume others
-        // crashed)
+        // TIMEOUT LOGIC: Wait for replies using wait/notify instead of sleep
         long startTime = System.currentTimeMillis();
         long timeout = 10000; // 10 seconds timeout
 
-        while (requestingCS && repliesReceived < (N - 1)) {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+        synchronized (this) {
+            while (requestingCS && repliesReceived < (N - 1)) {
+                long timeLeft = timeout - (System.currentTimeMillis() - startTime);
+                if (timeLeft <= 0) {
+                    System.err.println("!!! TIMEOUT WAITING FOR REPLIES (" + repliesReceived + "/" + (N - 1) + ") !!!");
+                    System.err.println("!!! ASSUMING CRITICAL SECTION PERMISSION !!!");
+                    break; // Force entry on timeout
+                }
 
-            if (System.currentTimeMillis() - startTime > timeout) {
-                System.err.println("!!! TIMEOUT WAITING FOR REPLIES (" + repliesReceived + "/" + (N - 1) + ") !!!");
-                System.err.println("!!! ASSUMING CRITICAL SECTION PERMISSION !!!");
-                break; // Force entry
+                try {
+                    // Wait for handleReply to notify us, or until timeout
+                    this.wait(timeLeft);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
         }
 
@@ -301,9 +314,15 @@ public class RicartNode {
             return;
         }
 
-        try (Socket socket = new Socket(targetAddress.getAddress(), targetAddress.getPort());
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
-            out.println(message);
+        try {
+            Socket socket = new Socket();
+            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
+                                                                                                             // timeout
+
+            try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+                out.println(message);
+            }
+            socket.close();
         } catch (IOException e) {
             System.err.println("Node " + nodeId + " failed to communicate with Node " + targetId +
                     " (" + targetAddress + "). Node is assumed down.");
@@ -382,6 +401,13 @@ public class RicartNode {
      * Handle SYNC_RESPONSE containing full DB dump
      */
     protected void onSyncResponse(String message) {
+        // Default: do nothing
+    }
+
+    /**
+     * Handle QUERY_TRANSACTION_LOGS. subclass should write response to out.
+     */
+    protected void onLogQuery(PrintWriter out) {
         // Default: do nothing
     }
 }

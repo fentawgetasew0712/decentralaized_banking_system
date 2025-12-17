@@ -283,7 +283,9 @@ public class ATMWebServer {
     class AdminLogsHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange t) throws IOException {
-            java.util.List<bank.Database.Transaction> logs = atmNode.getLocalDB().getAllTransactions();
+            // Fetch aggregated logs from ALL nodes in the cluster
+            java.util.List<bank.Database.Transaction> logs = atmNode.getAllClusterTransactions();
+
             StringBuilder json = new StringBuilder("[");
             for (int i = 0; i < logs.size(); i++) {
                 bank.Database.Transaction tx = logs.get(i);
@@ -338,7 +340,8 @@ public class ATMWebServer {
         @Override
         public void handle(HttpExchange t) throws IOException {
             java.util.List<bank.Database.Account> users = atmNode.getLocalDB().getAllUsers();
-            java.util.List<bank.Database.Transaction> logs = atmNode.getLocalDB().getAllTransactions();
+            // Use cluster-wide transactions for stats
+            java.util.List<bank.Database.Transaction> logs = atmNode.getAllClusterTransactions();
 
             long totalReserves = 0;
             for (bank.Database.Account acc : users) {
