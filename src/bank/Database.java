@@ -101,7 +101,8 @@ public class Database {
                 + "user_id VARCHAR(12), "
                 + "amount VARCHAR(20), "
                 + "target_id VARCHAR(12), "
-                + "node_id INT)";
+                + "node_id INT, "
+                + "lamport_clock INT DEFAULT 0)";
 
         try (Statement stmt = conn.createStatement()) {
             stmt.execute(sqlUsers);
@@ -245,9 +246,10 @@ public class Database {
         public String amount;
         public String targetId;
         public int nodeId;
+        public int lamportClock;
 
         public Transaction(int id, String timestamp, String type, String userId, String amount, String targetId,
-                int nodeId) {
+                int nodeId, int lamportClock) {
             this.id = id;
             this.timestamp = timestamp;
             this.type = type;
@@ -255,19 +257,22 @@ public class Database {
             this.amount = amount;
             this.targetId = targetId;
             this.nodeId = nodeId;
+            this.lamportClock = lamportClock;
         }
     }
 
-    public synchronized void logTransaction(String type, String userId, String amount, String targetId) {
+    public synchronized void logTransaction(String type, String userId, String amount, String targetId,
+            int lamportClock) {
         if (conn == null)
             return;
-        String sql = "INSERT INTO transactions (type, user_id, amount, target_id, node_id) VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO transactions (type, user_id, amount, target_id, node_id, lamport_clock) VALUES (?, ?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, type);
             pstmt.setString(2, userId);
             pstmt.setString(3, amount);
             pstmt.setString(4, targetId != null ? targetId : "");
             pstmt.setInt(5, nodeId);
+            pstmt.setInt(6, lamportClock);
             pstmt.executeUpdate();
             System.out.println("📝 Database: Logged " + type + " for " + userId);
         } catch (SQLException e) {
@@ -290,7 +295,8 @@ public class Database {
                         rs.getString("user_id"),
                         rs.getString("amount"),
                         rs.getString("target_id"),
-                        rs.getInt("node_id")));
+                        rs.getInt("node_id"),
+                        rs.getInt("lamport_clock")));
             }
         } catch (SQLException e) {
             e.printStackTrace();

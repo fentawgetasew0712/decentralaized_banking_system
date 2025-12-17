@@ -21,7 +21,8 @@ import java.util.Set;
 public class ATMNode extends RicartNode {
 
     private final Database localDB; // Each node has its own database!
-    private final Set<String> activeSessions = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    // activeSessions removed to allow simultaneous login
+
 
     // Operation tracking
     private String nextOperation = "WITHDRAW";
@@ -76,16 +77,15 @@ public class ATMNode extends RicartNode {
      * Phase 1: Fault-Tolerant Login
      */
     public String login(String user, String pass) {
-        // 0. CHECK IF ALREADY LOGGED IN (DEADLOCK MECHANISM)
-        if (isUserLoggedInElsewhere(user)) {
-            System.out.println("⛔ Check failed: User " + user + " is already logged in.");
-            return "FAIL:ALREADY_LOGGED_IN";
-        }
+        // 0. CHECK IF ALREADY LOGGED IN - REMOVED TO ALLOW SIMULTANEOUS ACCESS
+        // Distributed Lock (Ricart-Agrawala) handles operation safety.
+
 
         // 1. Check local database first (fastest)
         if (localDB.authenticate(user, pass)) {
             Database.Account acc = localDB.getAccount(user);
-            activeSessions.add(user); // Lock session
+            // activeSessions.add(user); // Session lock removed
+
             return "OK:LOGIN_SUCCESS:" + acc.name;
         }
 
@@ -97,7 +97,8 @@ public class ATMNode extends RicartNode {
             // 3. Cache account locally for future logins (performance optimization)
             System.out.println("✅ ATM " + getNodeId() + ": Found account on peer, caching locally");
             localDB.createAccount(user, peerAccount.name, peerAccount.password, peerAccount.balance);
-            activeSessions.add(user); // Lock session
+            // activeSessions.add(user); // Session lock removed
+
             return "OK:LOGIN_SUCCESS:" + peerAccount.name;
         }
 
@@ -389,46 +390,18 @@ public class ATMNode extends RicartNode {
     }
 
     /**
-     * Check if user is logged in on ANY node (Cluster-wide lock)
-     */
-    private boolean isUserLoggedInElsewhere(String userId) {
-        if (activeSessions.contains(userId)) {
-            System.out.println("  ⚠️  User " + userId + " is active LOCALLY.");
-            return true;
-        }
-
-        for (int peerId : getAllNodes().keySet()) {
-            if (peerId == getNodeId())
-                continue;
-            try {
-                String response = sendQueryToPeer(peerId, "QUERY_SESSION:" + userId);
-                if ("SESSION_ACTIVE".equals(response)) {
-                    System.out.println("⛔ ATM " + getNodeId() + ": Access Denied - User " + userId
-                            + " is active on Node " + peerId);
-                    return true;
-                }
-            } catch (Exception e) {
-                // Peer unreachable - assume safe to proceed (or could be strict)
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Logout user - Release session lock
+     * Logout user - No-op now as validation is stateless
      */
     public void logout(String userId) {
-        activeSessions.remove(userId);
-        System.out.println("🔓 ATM " + getNodeId() + ": User " + userId + " logged out. Session released.");
+        // activeSessions.remove(userId);
+        System.out.println("🔓 ATM " + getNodeId() + ": User " + userId + " logged out.");
     }
 
     @Override
     protected String onSessionQuery(String userId) {
-        if (activeSessions.contains(userId)) {
-            return "SESSION_ACTIVE";
-        }
-        return "SESSION_INACTIVE";
+        return "SESSION_INACTIVE"; // Always allow
     }
+
 
     /**
      * Override to handle replication messages from RicartNode
@@ -444,8 +417,11 @@ public class ATMNode extends RicartNode {
      * thanks to Ricart-Agrawala.
      */
     @Override
-    protected void onCriticalSection() {
-        System.out.println("⚡ CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
+    protected void onCriticalSection(int timestamp) {
+        System.out.println("\n⚡ CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
+        System.out.println("   🔒 LOCKED via Lamport Timestamp: " + timestamp);
+        System.out.println("   (Safe to perform exclusive operation now)\n");
+
 
         try {
             // 1. DEPOSIT
@@ -459,8 +435,8 @@ public class ATMNode extends RicartNode {
                     // Broadcast replication
                     broadcastReplication("REPLICATE_UPDATE:" + opUser + ":" + newBalance);
 
-                    // LOG TRANSACTION
-                    localDB.logTransaction("DEPOSIT", opUser, opAmount, null);
+                    // LOG TRANSACTION WITH TIMESTAMP
+                    localDB.logTransaction("DEPOSIT", opUser, opAmount, null, timestamp);
 
                     lastTransactionResult = "OK:DEPOSIT_SUCCESS:NewBalance=" + newBalance;
                     System.out.println("✅ ATM " + getNodeId() + ": Deposited $" + amountObj + " to " + opUser);
@@ -481,8 +457,8 @@ public class ATMNode extends RicartNode {
                         // Broadcast replication
                         broadcastReplication("REPLICATE_UPDATE:" + opUser + ":" + newBalance);
 
-                        // LOG TRANSACTION
-                        localDB.logTransaction("WITHDRAW", opUser, opAmount, null);
+                        // LOG TRANSACTION WITH TIMESTAMP
+                        localDB.logTransaction("WITHDRAW", opUser, opAmount, null, timestamp);
 
                         lastTransactionResult = "OK:WITHDRAW_SUCCESS:NewBalance=" + newBalance;
                         System.out.println("✅ ATM " + getNodeId() + ": Withdrew $" + amountObj + " from " + opUser);
@@ -512,8 +488,8 @@ public class ATMNode extends RicartNode {
                     broadcastReplication("REPLICATE_UPDATE:" + opUser + ":" + newSenderBalance);
                     broadcastReplication("REPLICATE_UPDATE:" + opTarget + ":" + newReceiverBalance);
 
-                    // LOG TRANSACTION
-                    localDB.logTransaction("TRANSFER", opUser, opAmount, opTarget);
+                    // LOG TRANSACTION WITH TIMESTAMP
+                    localDB.logTransaction("TRANSFER", opUser, opAmount, opTarget, timestamp);
 
                     lastTransactionResult = "OK:TRANSFER_SUCCESS:NewBalance=" + newSenderBalance;
                     System.out.println("✅ ATM " + getNodeId() + ": Transferred $" + amountObj + " from " + opUser

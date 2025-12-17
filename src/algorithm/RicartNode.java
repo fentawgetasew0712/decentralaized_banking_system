@@ -214,7 +214,7 @@ public class RicartNode {
         System.out.println("\n*** Node " + nodeId + " GRANTED ACCESS TO CS ***");
 
         // 1. Execute the Critical Section
-        onCriticalSection();
+        onCriticalSection(requestTimestamp);
 
         // 2. Exit Critical Section
         exitCriticalSection();
@@ -338,8 +338,8 @@ public class RicartNode {
     }
 
     // Can be overridden by subclasses (e.g. for Banking System)
-    protected void onCriticalSection() {
-        System.out.println("Node " + nodeId + " is in Critical Section (Base Implementation)");
+    protected void onCriticalSection(int timestamp) {
+        System.out.println("Node " + nodeId + " is in Critical Section (Base Implementation) at time " + timestamp);
     }
 
     /**
