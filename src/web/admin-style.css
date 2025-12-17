@@ -126,34 +126,47 @@ input:focus {
 
 button {
     cursor: pointer;
-    padding: 14px;
-    border: none;
-    border-radius: 8px;
     font-weight: 600;
-    font-size: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     letter-spacing: 0.5px;
-    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+}
+
+button:active {
+    transform: scale(0.98);
 }
 
 .btn-primary {
-    background-color: var(--accent);
+    background: linear-gradient(135deg, #0070f3 0%, #00c6ff 100%);
     color: white;
-    box-shadow: 0 4px 12px var(--accent-glow);
+    box-shadow: 0 4px 15px rgba(0, 112, 243, 0.2);
+    border: none;
+    padding: 14px;
+    border-radius: 8px;
+    font-size: 1rem;
 }
 
 .btn-primary:hover {
-    background-color: #0060df;
-    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0, 112, 243, 0.4);
+    transform: translateY(-2px);
+    filter: brightness(1.1);
 }
 
 .btn-danger {
-    background-color: rgba(255, 51, 102, 0.1);
-    color: #ff3366;
-    border: 1px solid rgba(255, 51, 102, 0.2);
+    background: linear-gradient(135deg, #ff4c4c 0%, #f92828 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(255, 76, 76, 0.2);
+    border: none;
+    padding: 14px;
+    border-radius: 8px;
+    font-weight: 600;
 }
 
 .btn-danger:hover {
-    background-color: rgba(255, 51, 102, 0.2);
+    box-shadow: 0 6px 20px rgba(255, 76, 76, 0.4);
+    transform: translateY(-2px);
+    filter: brightness(1.1);
 }
 
 /* Tables & Logs */
@@ -227,4 +240,130 @@ tr:hover td {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #444;
+}
+
+/* Filter Bar */
+.filter-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    align-items: end;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.filter-group label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.filter-group input,
+.filter-group select {
+    margin-bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+    padding: 14px;
+    border-radius: 8px;
+    font-size: 1rem;
+    width: 100%;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+    appearance: none;
+    /* remove default arrow */
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1em;
+}
+
+.filter-group input:hover,
+.filter-group select:hover {
+    background-color: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.filter-group input:focus,
+.filter-group select:focus {
+    background-color: rgba(0, 0, 0, 0.6);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0, 112, 243, 0.15);
+    outline: none;
+}
+
+/* Date Picker adjustments for dark mode */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(0.5);
+    cursor: pointer;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+    filter: invert(1) opacity(0.8);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+        /* Stack columns on smaller screens */
+    }
+
+    .filter-container {
+        grid-template-columns: 1fr 1fr;
+        /* 2 columns for filters */
+    }
+
+    .balance-amount {
+        font-size: 2.5rem;
+    }
+}
+
+@media (max-width: 600px) {
+    .filter-container {
+        grid-template-columns: 1fr;
+        /* Main stack */
+        padding: 15px;
+        gap: 12px;
+    }
+
+    .filter-group input,
+    .filter-group select {
+        padding: 12px;
+        font-size: 16px;
+        /* Avoid iOS zoom */
+    }
+
+    button {
+        width: 100%;
+        margin-top: 8px;
+        padding: 12px;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+    }
+
+    .header-controls {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    .card {
+        padding: 15px;
+    }
 }
