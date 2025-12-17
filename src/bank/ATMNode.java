@@ -6,9 +6,6 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
 
-import java.util.Collections;
-import java.util.Set;
-
 /**
  * ATMNode - DISTRIBUTED VERSION
  * 
@@ -22,7 +19,6 @@ public class ATMNode extends RicartNode {
 
     private final Database localDB; // Each node has its own database!
     // activeSessions removed to allow simultaneous login
-
 
     // Operation tracking
     private String nextOperation = "WITHDRAW";
@@ -79,7 +75,6 @@ public class ATMNode extends RicartNode {
     public String login(String user, String pass) {
         // 0. CHECK IF ALREADY LOGGED IN - REMOVED TO ALLOW SIMULTANEOUS ACCESS
         // Distributed Lock (Ricart-Agrawala) handles operation safety.
-
 
         // 1. Check local database first (fastest)
         if (localDB.authenticate(user, pass)) {
@@ -157,6 +152,9 @@ public class ATMNode extends RicartNode {
         System.out.println("📡 ATM " + getNodeId() + ": Broadcasting replication: " + message);
 
         for (int peerId : getAllNodes().keySet()) {
+            // Changed: Don't skip myself if I want to replicate to myself (though usually
+            // we optimize)
+            // But logic says "if (peerId != getNodeId())"
             if (peerId != getNodeId()) {
                 sendReplicationMessage(peerId, message);
             }
@@ -203,21 +201,36 @@ public class ATMNode extends RicartNode {
         if (targetAddress == null)
             return null;
 
-        try (Socket socket = new Socket(targetAddress.getAddress(), targetAddress.getPort());
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+        try {
+            Socket socket = new Socket();
+            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
+                                                                                                             // Connect
+                                                                                                             // Timeout
 
-            out.println(query);
+            try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
-            // Wait for response with timeout
-            socket.setSoTimeout(500); // 0.5 second timeout (faster failure)
-            String response = in.readLine();
-            return response;
+                out.println(query);
 
+                // Wait for response with timeout
+                socket.setSoTimeout(500); // 0.5 second Read timeout
+                String response = in.readLine();
+                socket.close(); // Explicit close
+                return response;
+            }
         } catch (IOException e) {
-            // Peer is offline
-            return null;
+            // Inner catch handles it, or we bubble up.
+            // Actually, let's just have one catch block.
+            // logic above was: try { socket code } catch(IO) { } catch(IO) { }
+            // The outer catch was failing.
+            // Let's just catch it once.
+            // Peer is offline or error occurred
+            System.out.println("  ⚠️  Node " + targetNodeId + " is offline or unreachable");
+            return null; // Return null as before
         }
+        // Removed the extra catch block below via this replacement
+        // return null; // Logic flow handles this
+
     }
 
     /**
@@ -228,16 +241,23 @@ public class ATMNode extends RicartNode {
         if (targetAddress == null)
             return;
 
-        try (Socket socket = new Socket(targetAddress.getAddress(), targetAddress.getPort());
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+        try {
+            Socket socket = new Socket();
+            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
+                                                                                                             // Connect
+                                                                                                             // Timeout
 
-            out.println(message);
-            System.out.println("  ↳ Sent to Node " + targetNodeId);
-
+            try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+                out.println(message);
+                System.out.println("  ↳ Sent to Node " + targetNodeId);
+            }
+            socket.close();
         } catch (IOException e) {
             System.err.println("  ✗ Failed to replicate to Node " + targetNodeId + ": " + e.getMessage());
             System.err.println("  (Node may be offline - this is OK in distributed systems)");
         }
+        // Removing the extra catch block
+
     }
 
     /**
@@ -331,23 +351,31 @@ public class ATMNode extends RicartNode {
         if (targetAddress == null)
             return;
 
-        try (Socket socket = new Socket(targetAddress.getAddress(), targetAddress.getPort());
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+        try {
+            Socket socket = new Socket();
+            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
+                                                                                                             // Connect
+                                                                                                             // Timeout
 
-            System.out.println("  -> Sending SYNC_REQUEST to Node " + targetNodeId);
-            out.println("SYNC_REQUEST");
+            try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
-            // Read response (could be large)
-            String response = in.readLine();
-            if (response != null && response.startsWith("SYNC_RESPONSE:")) {
-                handleReplicationMessage(response); // Reuse handler or call onSyncResponse
-                onSyncResponse(response);
+                System.out.println("  -> Sending SYNC_REQUEST to Node " + targetNodeId);
+                out.println("SYNC_REQUEST");
+
+                // Read response (could be large)
+                String response = in.readLine();
+                if (response != null && response.startsWith("SYNC_RESPONSE:")) {
+                    handleReplicationMessage(response); // Reuse handler or call onSyncResponse
+                    onSyncResponse(response);
+                }
             }
-
+            socket.close();
         } catch (IOException e) {
             // Peer offline
+            System.out.println("  ⚠️  Sync: Peer " + targetNodeId + " unreachable.");
         }
+        // Removing extra catch block
     }
 
     // ==========================================
@@ -390,6 +418,7 @@ public class ATMNode extends RicartNode {
     }
 
     /**
+     * /**
      * Logout user - No-op now as validation is stateless
      */
     public void logout(String userId) {
@@ -402,13 +431,118 @@ public class ATMNode extends RicartNode {
         return "SESSION_INACTIVE"; // Always allow
     }
 
-
     /**
      * Override to handle replication messages from RicartNode
      */
     @Override
     protected void onReplicationMessage(String message) {
         handleReplicationMessage(message);
+    }
+
+    /**
+     * Get ALL transactions from the ENTIRE cluster (Local + Remote)
+     */
+    public java.util.List<Database.Transaction> getAllClusterTransactions() {
+        // 1. Get Local Logs
+        java.util.List<Database.Transaction> allLogs = new java.util.ArrayList<>(localDB.getAllTransactions());
+
+        // 2. Query All Peers
+        for (int peerId : getAllNodes().keySet()) {
+            if (peerId == getNodeId())
+                continue;
+
+            try {
+                // Fetch logs from peer
+                System.out.println("  Admin: Fetching logs from Node " + peerId + "...");
+                java.util.List<Database.Transaction> peerLogs = requestPeerTransactions(peerId);
+                if (peerLogs != null) {
+                    allLogs.addAll(peerLogs);
+                }
+            } catch (Exception e) {
+                System.out.println("  ⚠️  Admin: Could not fetch logs from Node " + peerId);
+            }
+        }
+
+        // 3. Sort by Timestamp Descending
+        allLogs.sort((t1, t2) -> t2.timestamp.compareTo(t1.timestamp));
+
+        return allLogs;
+    }
+
+    private java.util.List<Database.Transaction> requestPeerTransactions(int peerId) {
+        InetSocketAddress targetAddress = getAllNodes().get(peerId);
+        if (targetAddress == null)
+            return null;
+
+        try {
+            Socket socket = new Socket();
+            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
+                                                                                                             // Connect
+                                                                                                             // Timeout
+
+            try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+
+                out.println("QUERY_TRANSACTION_LOGS");
+
+                String response = in.readLine();
+                if (response != null && response.startsWith("LOGS_RESPONSE:")) {
+                    return parseTransactions(response.substring("LOGS_RESPONSE:".length()));
+                }
+            }
+            socket.close();
+        } catch (IOException e) {
+            // connection failed
+            return null;
+        }
+        return null;
+    }
+
+    private java.util.List<Database.Transaction> parseTransactions(String data) {
+        java.util.List<Database.Transaction> list = new java.util.ArrayList<>();
+        if (data.isEmpty())
+            return list;
+
+        String[] rows = data.split("\\|");
+        for (String row : rows) {
+            // Format: id:time:type:user:amt:target:node
+            String[] parts = row.split("~"); // Using ~ as delimiter to avoid conflict with time colons
+            if (parts.length >= 8) {
+                list.add(new Database.Transaction(
+                        Integer.parseInt(parts[0]),
+                        parts[1],
+                        parts[2],
+                        parts[3],
+                        parts[4],
+                        parts[5],
+                        Integer.parseInt(parts[6]),
+                        Integer.parseInt(parts[7])));
+            }
+        }
+        return list;
+    }
+
+    // Handle incoming log request
+    @Override
+    protected void onLogQuery(PrintWriter out) {
+        java.util.List<Database.Transaction> myLogs = localDB.getAllTransactions();
+        StringBuilder sb = new StringBuilder("LOGS_RESPONSE:");
+
+        for (int i = 0; i < myLogs.size(); i++) {
+            Database.Transaction t = myLogs.get(i);
+            if (i > 0)
+                sb.append("|");
+            // id~time~type~user~amount~target~node
+            sb.append(t.id).append("~")
+                    .append(t.timestamp).append("~")
+                    .append(t.type).append("~")
+                    .append(t.userId).append("~")
+                    .append(t.amount).append("~")
+                    .append(t.targetId).append("~")
+                    .append(t.nodeId).append("~")
+                    .append(t.lamportClock);
+        }
+        out.println(sb.toString());
     }
 
     /**
@@ -421,7 +555,6 @@ public class ATMNode extends RicartNode {
         System.out.println("\n⚡ CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
         System.out.println("   🔒 LOCKED via Lamport Timestamp: " + timestamp);
         System.out.println("   (Safe to perform exclusive operation now)\n");
-
 
         try {
             // 1. DEPOSIT
