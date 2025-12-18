@@ -50,12 +50,16 @@
                 <!-- Filters -->
                 <div class="filter-container">
                     <div class="filter-group">
-                        <label>Search User ID</label>
-                        <input type="text" id="filter-account" placeholder="e.g. 1001..." onkeyup="applyFilters()">
+                        <div class="input-group">
+                            <input type="text" id="filter-account" placeholder=" " onkeyup="applyFilters()">
+                            <label>Search User ID</label>
+                        </div>
                     </div>
                     <div class="filter-group">
-                        <label>Filter by Node</label>
-                        <input type="number" id="filter-node" placeholder="Node ID..." onkeyup="applyFilters()">
+                        <div class="input-group">
+                            <input type="number" id="filter-node" placeholder=" " onkeyup="applyFilters()">
+                            <label>Filter by Node</label>
+                        </div>
                     </div>
                     <div class="filter-group">
                         <label>Time Period</label>
@@ -131,15 +135,17 @@
     </div>
 
     <script>
-        if (!localStorage.getItem('adminAuth')) {
-            window.location.href = 'admin_login.html';
+        if (localStorage.getItem('userRole') !== 'admin') {
+            window.location.href = 'login.html';
         }
 
         let allTransactionLogs = [];
 
         function logout() {
-            localStorage.removeItem('adminAuth');
-            window.location.href = 'admin_login.html';
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('currentUserName');
+            localStorage.removeItem('userRole');
+            window.location.href = 'login.html';
         }
 
         async function loadAll() {

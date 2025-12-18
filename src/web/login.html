@@ -9,30 +9,37 @@
 </head>
 
 <body>
-    <div class="container" style="justify-content: center; height: 100vh;">
+    <div class="container"
+        style="display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px;">
         <div class="card" id="login-card" style="width: 100%; max-width: 400px; text-align: center;">
             <h1 style="color: var(--primary); margin-bottom: 2rem;">Bank Login</h1>
 
             <div class="input-group">
+                <input type="text" id="accountId" placeholder=" " oninput="validateId(this)">
                 <label>Account ID (12 Digits)</label>
-                <input type="text" id="accountId" placeholder="Enter your 12-digit ID">
             </div>
             <div class="input-group">
+                <input type="password" id="password" placeholder=" ">
                 <label>Password</label>
-                <input type="password" id="password" placeholder="Enter your password">
             </div>
             <button onclick="login()" class="btn-primary" style="width: 100%; margin-top: 1rem;">Access Account</button>
-            <p style="margin-top: 1rem; font-size: 0.9rem;">
-                Don't have an account? <a href="signup.html" style="color: var(--accent);">Sign Up</a>
+            <p style="margin-top: 1.5rem; font-size: 0.9rem;">
+                Don't have an account? <a href="signup.html" class="auth-link">Create Account</a>
             </p>
-            <p id="error-msg" style="color: var(--danger); margin-top: 1rem;"></p>
-
-            <hr style="border: 0; border-top: 1px solid #333; margin: 1.5rem 0;">
-            <a href="admin_login.html" style="font-size: 0.8rem; color: #555; text-decoration: none;">Admin Access</a>
+            <p id="error-msg" style="color: var(--danger); margin-top: 1rem; font-weight: 500;"></p>
         </div>
     </div>
 
     <script>
+        function validateId(input) {
+            if (input.value.length === 0) {
+                input.className = "";
+            } else if (/^\d{12}$/.test(input.value)) {
+                input.className = "valid";
+            } else {
+                input.className = "invalid";
+            }
+        }
         async function login() {
             const userId = document.getElementById('accountId').value;
             const password = document.getElementById('password').value;
@@ -59,15 +66,25 @@
                 });
 
                 const result = await response.text();
-                // Expected format: OK:LOGIN_SUCCESS:Name
+                // Expected format: OK:LOGIN_SUCCESS:Name:Role
                 if (result.startsWith("OK:LOGIN_SUCCESS")) {
                     const parts = result.split(":");
                     const name = parts[2];
+                    const role = parts[3];
+
                     localStorage.setItem('currentUser', userId);
                     localStorage.setItem('currentUserName', name);
-                    window.location.href = 'dashboard.html';
+                    localStorage.setItem('userRole', role);
+
+                    if (role === 'admin') {
+                        window.location.href = 'admin.html';
+                    } else {
+                        window.location.href = 'dashboard.html';
+                    }
+                } else if (result === "FAIL:AUTH_FAILED") {
+                    errorMsg.innerText = "Error: Invalid Account ID or Password.";
                 } else {
-                    errorMsg.innerText = "Login Failed: " + result;
+                    errorMsg.innerText = "Login Failed: " + result.replace("FAIL:", "").replace("_", " ");
                 }
             } catch (err) {
                 errorMsg.innerText = "Error connecting to server.";

@@ -34,7 +34,6 @@ public class ATMWebServer {
         server.createContext("/api/register", new RegisterHandler());
 
         // Admin Endpoints
-        server.createContext("/api/admin/login", new AdminLoginHandler());
         server.createContext("/api/admin/logs", new AdminLogsHandler());
         server.createContext("/api/admin/users", new AdminUsersHandler());
         server.createContext("/api/admin/stats", new AdminStatsHandler());
@@ -251,34 +250,6 @@ public class ATMWebServer {
     }
 
     // ================= ADMIN HANDLERS =================
-
-    class AdminLoginHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange t) throws IOException {
-            if ("POST".equals(t.getRequestMethod())) {
-                InputStreamReader isr = new InputStreamReader(t.getRequestBody(), "utf-8");
-                BufferedReader br = new BufferedReader(isr);
-                StringBuilder buf = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) {
-                    buf.append(line);
-                }
-                String json = buf.toString();
-                String pass = extractJson(json, "password");
-
-                String response = "FAIL";
-                // Hardcoded Admin Password for prototype
-                if ("admin123".equals(pass)) {
-                    response = "OK";
-                }
-
-                t.sendResponseHeaders(200, response.length());
-                OutputStream os = t.getResponseBody();
-                os.write(response.getBytes());
-                os.close();
-            }
-        }
-    }
 
     class AdminLogsHandler implements HttpHandler {
         @Override

@@ -26,12 +26,14 @@ public class Database {
         public String name;
         public String password;
         public int balance;
+        public String role;
 
-        public Account(String id, String name, String password, int balance) {
+        public Account(String id, String name, String password, int balance, String role) {
             this.id = id;
             this.name = name;
             this.password = password;
             this.balance = balance;
+            this.role = role;
         }
     }
 
@@ -92,7 +94,8 @@ public class Database {
                 + "id VARCHAR(12) PRIMARY KEY, "
                 + "name VARCHAR(100) NOT NULL, "
                 + "password VARCHAR(100) NOT NULL, "
-                + "balance INT DEFAULT 0)";
+                + "balance INT DEFAULT 0, "
+                + "role VARCHAR(20) DEFAULT 'user')";
 
         String sqlTrans = "CREATE TABLE IF NOT EXISTS transactions ("
                 + "id INT AUTO_INCREMENT PRIMARY KEY, "
@@ -106,21 +109,50 @@ public class Database {
         try (Statement stmt = conn.createStatement()) {
             stmt.execute(sqlUsers);
             stmt.execute(sqlTrans);
+
+            // Add role column if it doesn't exist (for existing databases)
+            try {
+                stmt.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'");
+            } catch (SQLException e) {
+                // Column might already exist
+            }
+
+            // Create or Update default admin account
+            String checkAdmin = "SELECT * FROM users WHERE id = '000000000000'";
+            ResultSet rs = stmt.executeQuery(checkAdmin);
+            if (!rs.next()) {
+                String insertAdmin = "INSERT INTO users (id, name, password, balance, role) VALUES ('000000000000', 'System Admin', '"
+                        + PasswordUtils.hash("admin123") + "', 0, 'admin')";
+                stmt.executeUpdate(insertAdmin);
+                System.out.println("Database: Default admin account created (000000000000 / admin123 [hashed])");
+            } else {
+                String currentPass = rs.getString("password");
+                if ("admin123".equals(currentPass)) {
+                    String updateAdmin = "UPDATE users SET password = ? WHERE id = '000000000000'";
+                    try (PreparedStatement pstmt = conn.prepareStatement(updateAdmin)) {
+                        pstmt.setString(1, PasswordUtils.hash("admin123"));
+                        pstmt.executeUpdate();
+                        System.out.println("Database: Migrated admin password to hash");
+                    }
+                }
+            }
         } catch (SQLException e) {
             System.err.println("Init DB Error: " + e.getMessage());
         }
     }
 
-    public synchronized boolean createAccount(String id, String name, String password, int initialBalance) {
+    public synchronized boolean createAccount(String id, String name, String password, int initialBalance,
+            String role) {
         if (conn == null)
             return false;
-        String sql = "INSERT INTO users (id, name, password, balance) VALUES (?, ?, ?, ?)";
-        try (PreparedStatement admin = conn.prepareStatement(sql)) {
-            admin.setString(1, id);
-            admin.setString(2, name);
-            admin.setString(3, password);
-            admin.setInt(4, initialBalance);
-            admin.executeUpdate();
+        String sql = "INSERT INTO users (id, name, password, balance, role) VALUES (?, ?, ?, ?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, id);
+            pstmt.setString(2, name);
+            pstmt.setString(3, PasswordUtils.hash(password));
+            pstmt.setInt(4, initialBalance);
+            pstmt.setString(5, role);
+            pstmt.executeUpdate();
             return true;
         } catch (SQLException e) {
             System.out.println("Create Account Error (might exist): " + e.getMessage());
@@ -128,15 +160,23 @@ public class Database {
         }
     }
 
+    // Default version for regular users
+    public synchronized boolean createAccount(String id, String name, String password, int initialBalance) {
+        return createAccount(id, name, password, initialBalance, "user");
+    }
+
     public boolean authenticate(String id, String password) {
         if (conn == null)
             return false;
-        String sql = "SELECT * FROM users WHERE id = ? AND password = ?";
+        String sql = "SELECT password FROM users WHERE id = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, id);
-            pstmt.setString(2, password);
             ResultSet rs = pstmt.executeQuery();
-            return rs.next();
+            if (rs.next()) {
+                String storedHash = rs.getString("password");
+                return storedHash.equals(PasswordUtils.hash(password));
+            }
+            return false;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
@@ -155,7 +195,8 @@ public class Database {
                         rs.getString("id"),
                         rs.getString("name"),
                         rs.getString("password"),
-                        rs.getInt("balance"));
+                        rs.getInt("balance"),
+                        rs.getString("role"));
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -204,7 +245,8 @@ public class Database {
                 sb.append(rs.getString("id")).append(":")
                         .append(rs.getString("name")).append(":")
                         .append(rs.getString("password")).append(":")
-                        .append(rs.getInt("balance"));
+                        .append(rs.getInt("balance")).append(":")
+                        .append(rs.getString("role"));
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -215,26 +257,31 @@ public class Database {
     /**
      * Insert or Update account (Upsert) for synchronization
      */
-    public synchronized void upsertAccount(String id, String name, String password, int balance) {
+    public synchronized void upsertAccount(String id, String name, String password, int balance, String role) {
         if (conn == null)
             return;
 
         // Try to update first
         if (accountExists(id)) {
-            String sql = "UPDATE users SET name=?, password=?, balance=? WHERE id=?";
-            try (PreparedStatement admin = conn.prepareStatement(sql)) {
-                admin.setString(1, name);
-                admin.setString(2, password);
-                admin.setInt(3, balance);
-                admin.setString(4, id);
-                admin.executeUpdate();
+            String sql = "UPDATE users SET name=?, password=?, balance=?, role=? WHERE id=?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, name);
+                pstmt.setString(2, password);
+                pstmt.setInt(3, balance);
+                pstmt.setString(4, role);
+                pstmt.setString(5, id);
+                pstmt.executeUpdate();
             } catch (SQLException e) {
                 e.printStackTrace();
             }
         } else {
             // Insert if not exists
-            createAccount(id, name, password, balance);
+            createAccount(id, name, password, balance, role);
         }
+    }
+
+    public synchronized void upsertAccount(String id, String name, String password, int balance) {
+        upsertAccount(id, name, password, balance, "user");
     }
 
     public static class Transaction {
@@ -310,7 +357,8 @@ public class Database {
                         rs.getString("id"),
                         rs.getString("name"),
                         rs.getString("password"),
-                        rs.getInt("balance")));
+                        rs.getInt("balance"),
+                        rs.getString("role")));
             }
         } catch (SQLException e) {
             e.printStackTrace();

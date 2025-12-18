@@ -80,7 +80,7 @@ public class ATMNode extends RicartNode {
         if (localDB.authenticate(user, pass)) {
             Database.Account acc = localDB.getAccount(user);
             // activeSessions.add(user); // Lock session -> REMOVED
-            return "OK:LOGIN_SUCCESS:" + acc.name;
+            return "OK:LOGIN_SUCCESS:" + acc.name + ":" + acc.role;
         }
 
         // 2. Query available peer nodes (fault tolerance)
@@ -90,9 +90,9 @@ public class ATMNode extends RicartNode {
         if (peerAccount != null) {
             // 3. Cache account locally for future logins (performance optimization)
             System.out.println("✅ ATM " + getNodeId() + ": Found account on peer, caching locally");
-            localDB.createAccount(user, peerAccount.name, peerAccount.password, peerAccount.balance);
+            localDB.createAccount(user, peerAccount.name, peerAccount.password, peerAccount.balance, peerAccount.role);
             // activeSessions.add(user); // Lock session -> REMOVED
-            return "OK:LOGIN_SUCCESS:" + peerAccount.name;
+            return "OK:LOGIN_SUCCESS:" + peerAccount.name + ":" + peerAccount.role;
         }
 
         // 4. Not found anywhere
@@ -125,7 +125,8 @@ public class ATMNode extends RicartNode {
 
             if (created) {
                 // REPLICATE to all peer nodes
-                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + name + ":" + pass + ":" + initialBalance;
+                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + name + ":" + pass + ":" + initialBalance
+                        + ":user";
                 broadcastReplication(replicationMsg);
 
                 System.out.println("✅ ATM " + getNodeId() + ": Account created and replicated to all peers");
@@ -172,13 +173,14 @@ public class ATMNode extends RicartNode {
                 String response = sendQueryToPeer(peerId, "QUERY_ACCOUNT:" + userId + ":" + password);
 
                 if (response != null && response.startsWith("ACCOUNT_FOUND:")) {
-                    // Parse: ACCOUNT_FOUND:name:balance
-                    String[] parts = response.split(":", 4);
-                    if (parts.length >= 4) {
+                    // Parse: ACCOUNT_FOUND:name:balance:role
+                    String[] parts = response.split(":", 5);
+                    if (parts.length >= 5) {
                         String name = parts[1];
                         int balance = Integer.parseInt(parts[2]);
+                        String role = parts[3];
                         System.out.println("  ✅ Found account on Node " + peerId);
-                        return new Database.Account(userId, name, password, balance);
+                        return new Database.Account(userId, name, password, balance, role);
                     }
                 }
             } catch (Exception e) {
@@ -275,11 +277,12 @@ public class ATMNode extends RicartNode {
                 String name = parts[2];
                 String password = parts[3];
                 int balance = Integer.parseInt(parts[4]);
+                String role = parts.length > 5 ? parts[5] : "user";
 
                 // Create account in local database (if doesn't exist)
                 if (!localDB.accountExists(userId)) {
-                    localDB.createAccount(userId, name, password, balance);
-                    System.out.println("  ✅ Replicated account creation: " + userId);
+                    localDB.createAccount(userId, name, password, balance, role);
+                    System.out.println("  ✅ Replicated account creation: " + userId + " (Role: " + role + ")");
                 } else {
                     System.out.println("  ⚠️  Account already exists: " + userId);
                 }
@@ -384,7 +387,7 @@ public class ATMNode extends RicartNode {
     protected String onAccountQuery(String userId, String password) {
         if (localDB.authenticate(userId, password)) {
             Database.Account acc = localDB.getAccount(userId);
-            return "ACCOUNT_FOUND:" + acc.name + ":" + acc.balance;
+            return "ACCOUNT_FOUND:" + acc.name + ":" + acc.balance + ":" + acc.role;
         }
         return "ACCOUNT_NOT_FOUND";
     }
@@ -407,8 +410,8 @@ public class ATMNode extends RicartNode {
         String[] accounts = data.split("\\|");
         for (String accStr : accounts) {
             String[] parts = accStr.split(":");
-            if (parts.length >= 4) {
-                localDB.upsertAccount(parts[0], parts[1], parts[2], Integer.parseInt(parts[3]));
+            if (parts.length >= 5) {
+                localDB.upsertAccount(parts[0], parts[1], parts[2], Integer.parseInt(parts[3]), parts[4]);
                 count++;
             }
         }
