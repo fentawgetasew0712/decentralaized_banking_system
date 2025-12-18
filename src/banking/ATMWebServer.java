@@ -323,7 +323,7 @@ public class ATMWebServer {
             // Use cluster-wide transactions for stats
             java.util.List<bank.Database.Transaction> logs = atmNode.getAllClusterTransactions();
 
-            long totalReserves = 0;
+            double totalReserves = 0;
             int customerCount = 0;
             for (bank.Database.Account acc : allUsers) {
                 if (!acc.id.equals("000000000000")) {

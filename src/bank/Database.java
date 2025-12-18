@@ -251,7 +251,7 @@ public class Database {
                 sb.append(rs.getString("id")).append(":")
                         .append(rs.getString("name")).append(":")
                         .append(rs.getString("password")).append(":")
-                        .append(rs.getInt("balance")).append(":")
+                        .append(rs.getDouble("balance")).append(":")
                         .append(rs.getString("role"));
             }
         } catch (SQLException e) {

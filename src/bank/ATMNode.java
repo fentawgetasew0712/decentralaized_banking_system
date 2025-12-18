@@ -348,21 +348,19 @@ public class ATMNode extends RicartNode {
         System.out.println("🔄 ATM " + getNodeId() + ": Starting Initial Sync...");
 
         // Simple strategy: Ask ALL peers, merge everything.
-        // In a real system, you might ask just one or use a Merkle tree.
+        int reachablePeers = 0;
         for (int peerId : getAllNodes().keySet()) {
             if (peerId == getNodeId())
                 continue;
 
             try {
-                // We manually send a socket message because RicartNode.sendMessage is for
-                // protocol messages
-                // and we want a request-response flow here.
-                // Actually, let's just use a socket directly like queryPeersForAccount
                 sendSyncRequestToPeer(peerId);
+                reachablePeers++;
             } catch (Exception e) {
-                System.out.println("  ⚠️  Sync: Peer " + peerId + " unreachable.");
+                System.out.println("  ⚠️  Sync: Node " + peerId + " is offline.");
             }
         }
+        System.out.println("✅ ATM " + getNodeId() + " Sync Complete. reached " + reachablePeers + " peers.");
     }
 
     private void sendSyncRequestToPeer(int targetNodeId) {
@@ -385,7 +383,6 @@ public class ATMNode extends RicartNode {
                 // Read response (could be large)
                 String response = in.readLine();
                 if (response != null && response.startsWith("SYNC_RESPONSE:")) {
-                    handleReplicationMessage(response); // Reuse handler or call onSyncResponse
                     onSyncResponse(response);
                 }
             }
@@ -476,7 +473,13 @@ public class ATMNode extends RicartNode {
      * Get ALL transactions from the ENTIRE cluster (Local + Remote)
      */
     public java.util.List<Database.Transaction> getAllClusterTransactions() {
-        // Return cached logs if available, otherwise fetch locally
+        // Return cached logs if valid, otherwise return local logs (don't block UI)
+        long currentTime = System.currentTimeMillis();
+        if (cachedClusterLogs != null && !cachedClusterLogs.isEmpty() && (currentTime - lastUpdate < CACHE_TTL)) {
+            return cachedClusterLogs;
+        }
+
+        // Return whatever cache we have (could be slightly stale) to keep UI fast
         if (cachedClusterLogs == null || cachedClusterLogs.isEmpty()) {
             return new java.util.ArrayList<>(localDB.getAllTransactions());
         }
