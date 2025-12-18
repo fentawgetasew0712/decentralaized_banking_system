@@ -227,8 +227,12 @@
                 return;
             }
 
-            filtered.forEach(log => {
+            filtered.forEach((log, index) => {
                 const tr = document.createElement('tr');
+                tr.className = 'log-row';
+                tr.style.animationDelay = `${index * 0.05}s`; // Staggered animation
+                tr.classList.add('animate-entry');
+
                 tr.innerHTML = `
                     <td style="color: var(--text-secondary); font-family: monospace;">#${log.id}</td>
                     <td style="font-size: 0.85rem;">${log.timestamp}</td>
