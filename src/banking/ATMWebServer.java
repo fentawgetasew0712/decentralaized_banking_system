@@ -285,16 +285,25 @@ public class ATMWebServer {
     class AdminUsersHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange t) throws IOException {
-            java.util.List<bank.Database.Account> users = atmNode.getLocalDB().getAllUsers();
+            java.util.List<bank.Database.Account> allUsers = atmNode.getLocalDB().getAllUsers();
             StringBuilder json = new StringBuilder("[");
-            for (int i = 0; i < users.size(); i++) {
-                bank.Database.Account acc = users.get(i);
+
+            // Filter out system admin (000000000000)
+            java.util.List<bank.Database.Account> customers = new java.util.ArrayList<>();
+            for (bank.Database.Account acc : allUsers) {
+                if (!acc.id.equals("000000000000")) {
+                    customers.add(acc);
+                }
+            }
+
+            for (int i = 0; i < customers.size(); i++) {
+                bank.Database.Account acc = customers.get(i);
                 json.append("{")
                         .append("\"id\":\"").append(acc.id).append("\",")
                         .append("\"name\":\"").append(acc.name).append("\",")
                         .append("\"balance\":").append(acc.balance)
                         .append("}");
-                if (i < users.size() - 1)
+                if (i < customers.size() - 1)
                     json.append(",");
             }
             json.append("]");
@@ -310,18 +319,23 @@ public class ATMWebServer {
     class AdminStatsHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange t) throws IOException {
-            java.util.List<bank.Database.Account> users = atmNode.getLocalDB().getAllUsers();
+            java.util.List<bank.Database.Account> allUsers = atmNode.getLocalDB().getAllUsers();
             // Use cluster-wide transactions for stats
             java.util.List<bank.Database.Transaction> logs = atmNode.getAllClusterTransactions();
 
             long totalReserves = 0;
-            for (bank.Database.Account acc : users) {
-                totalReserves += acc.balance;
+            int customerCount = 0;
+            for (bank.Database.Account acc : allUsers) {
+                // Exclude system admin from statistics
+                if (!acc.id.equals("000000000000")) {
+                    totalReserves += acc.balance;
+                    customerCount++;
+                }
             }
 
             StringBuilder json = new StringBuilder();
             json.append("{")
-                    .append("\"totalUsers\":").append(users.size()).append(",")
+                    .append("\"totalUsers\":").append(customerCount).append(",")
                     .append("\"totalReserves\":").append(totalReserves).append(",")
                     .append("\"totalTransactions\":").append(logs.size())
                     .append("}");

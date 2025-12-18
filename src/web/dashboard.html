@@ -36,7 +36,8 @@
                                 oninput="this.className=this.value?'valid':''">
                             <label>Amount to Withdraw</label>
                         </div>
-                        <button class="btn-danger" onclick="performAction('WITHDRAW')">Withdraw</button>
+                        <button id="btn-WITHDRAW" class="btn-danger"
+                            onclick="performAction('WITHDRAW')">Withdraw</button>
                     </div>
 
                     <div class="card action-card">
@@ -46,7 +47,7 @@
                                 oninput="this.className=this.value?'valid':''">
                             <label>Amount to Deposit</label>
                         </div>
-                        <button class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
+                        <button id="btn-DEPOSIT" class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
                     </div>
 
                     <div class="card action-card" style="grid-column: span 2;">
@@ -63,7 +64,8 @@
                                 <label>Transfer Amount</label>
                             </div>
                         </div>
-                        <button class="btn-primary" onclick="performAction('TRANSFER')">Confirm Transfer</button>
+                        <button id="btn-TRANSFER" class="btn-primary" onclick="performAction('TRANSFER')">Confirm
+                            Transfer</button>
                     </div>
                 </div>
 
@@ -130,6 +132,9 @@
 
         async function performAction(type) {
             let amount, target = '';
+            const btn = document.getElementById(`btn-${type}`);
+            const originalText = btn.innerText;
+            const originalClass = btn.className;
 
             if (type === 'WITHDRAW') amount = document.getElementById('withdraw-amount').value;
             if (type === 'DEPOSIT') amount = document.getElementById('deposit-amount').value;
@@ -147,6 +152,10 @@
                 return;
             }
 
+            // Show processing state
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+            btn.style.opacity = "0.7";
             log(`Requesting ${type} for ${currentUser}...`);
 
             try {
@@ -157,11 +166,46 @@
                 const result = await res.text();
                 log(result);
 
-                // Poll for balance update
-                setTimeout(refreshBalance, 2000);
-                setTimeout(refreshBalance, 5000); // Double check
+                // Check if successful
+                if (result.startsWith("OK")) {
+                    // Success state
+                    btn.className = "btn-success";
+                    btn.innerText = "Success ✓";
+                    btn.style.opacity = "1";
+
+                    // Poll for balance update
+                    setTimeout(refreshBalance, 1000);
+                    setTimeout(refreshBalance, 3000);
+                } else {
+                    // Failed state
+                    btn.className = "btn-danger";
+                    btn.innerText = "Failed ✗";
+                    btn.style.opacity = "1";
+                }
+
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                    btn.className = originalClass;
+                    btn.style.opacity = "1";
+                }, 3000);
+
             } catch (e) {
                 log("Action failed: Network Error");
+
+                // Network error state
+                btn.className = "btn-danger";
+                btn.innerText = "Failed ✗";
+                btn.style.opacity = "1";
+
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                    btn.className = originalClass;
+                    btn.style.opacity = "1";
+                }, 3000);
             }
         }
 
