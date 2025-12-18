@@ -46,6 +46,44 @@
                     <button onclick="loadAll()" class="btn-primary"
                         style="width: auto; padding: 0.5rem 1rem; font-size: 0.8rem;">Refresh Data</button>
                 </div>
+
+                <!-- Filters -->
+                <div class="filter-container">
+                    <div class="filter-group">
+                        <label>Search User ID</label>
+                        <input type="text" id="filter-account" placeholder="e.g. 1001..." onkeyup="applyFilters()">
+                    </div>
+                    <div class="filter-group">
+                        <label>Filter by Node</label>
+                        <input type="number" id="filter-node" placeholder="Node ID..." onkeyup="applyFilters()">
+                    </div>
+                    <div class="filter-group">
+                        <label>Time Period</label>
+                        <select id="filter-period" onchange="applyFilters()">
+                            <option value="all">All Time</option>
+                            <option value="today">Today</option>
+                            <option value="week">Last 7 Days</option>
+                            <option value="month">Last 30 Days</option>
+                            <option value="specific">Specific Date</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <!-- Label spacer to align button -->
+                        <label style="visibility: hidden;">Action</label>
+                        <button onclick="resetFilters()" class="btn-danger" style="margin-bottom: 0;">Reset
+                            Filters</button>
+                    </div>
+
+                    <!-- Specific Time Input (Hidden by default) -->
+                    <div id="specific-time-container"
+                        style="display: none; grid-column: 1 / -1; gap: 1rem; align-items: center; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-top: -10px;">
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Select Date:</span>
+                        <input type="date" id="filter-specific" onchange="applyFilters()" style="margin:0;">
+                        <span style="color: var(--text-secondary); font-size: 0.8rem; margin-left: auto;">(Matches full
+                            day)</span>
+                    </div>
+                </div>
+
                 <div style="overflow-x: auto;">
                     <table id="logs-table">
                         <thead>
@@ -97,6 +135,8 @@
             window.location.href = 'admin_login.html';
         }
 
+        let allTransactionLogs = [];
+
         function logout() {
             localStorage.removeItem('adminAuth');
             window.location.href = 'admin_login.html';
@@ -123,31 +163,95 @@
         async function loadLogs() {
             try {
                 const res = await fetch('/api/admin/logs');
-                const logs = await res.json();
-                const tbody = document.querySelector('#logs-table tbody');
-                tbody.innerHTML = '';
-
-                if (logs.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No transaction history found on this node.</td></tr>';
-                    return;
-                }
-
-                logs.forEach(log => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td style="color: var(--text-secondary); font-family: monospace;">#${log.id}</td>
-                        <td style="font-size: 0.85rem;">${log.timestamp}</td>
-                        <td><span class="badge badge-${log.type}">${log.type}</span></td>
-                        <td>${log.user}</td>
-                        <td style="font-weight:bold; color: var(--text-primary);">$${log.amount}</td>
-                        <td>${log.target || '-'}</td>
-                        <td><span style="color: var(--text-secondary);">Node ${log.node}</span></td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                allTransactionLogs = await res.json(); // Store globally
+                applyFilters(); // Render with current filters
             } catch (e) {
                 console.error(e);
             }
+        }
+
+        function applyFilters() {
+            const accountFilter = document.getElementById('filter-account').value.trim().toLowerCase();
+            const nodeFilter = document.getElementById('filter-node').value;
+            const periodFilter = document.getElementById('filter-period').value;
+
+            // Toggle Specific Time Visibility
+            const specificContainer = document.getElementById('specific-time-container');
+            if (periodFilter === 'specific') {
+                specificContainer.style.display = 'flex';
+            } else {
+                specificContainer.style.display = 'none';
+            }
+
+            const tbody = document.querySelector('#logs-table tbody');
+            tbody.innerHTML = '';
+
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            const oneWeekAgo = now.getTime() - (7 * 24 * 60 * 60 * 1000);
+            const oneMonthAgo = now.getTime() - (30 * 24 * 60 * 60 * 1000);
+
+            const filtered = allTransactionLogs.filter(log => {
+                // 1. Account Filter (User ONLY)
+                // User requested to filter only by the Initiator User ID, not Target.
+                const matchesAccount = !accountFilter || log.user.toLowerCase().includes(accountFilter);
+
+                // 2. Node Filter
+                const matchesNode = !nodeFilter || log.node.toString() === nodeFilter;
+
+                // 3. Time Period Filter
+                let matchesTime = true;
+                // timestamp format: "yyyy-MM-dd HH:mm:ss"
+                // Parse manually for compatibility or use Date.parse (assuming logical format)
+                const logTime = new Date(log.timestamp).getTime();
+
+                if (periodFilter === 'today') {
+                    matchesTime = logTime >= startOfDay;
+                } else if (periodFilter === 'week') {
+                    matchesTime = logTime >= oneWeekAgo;
+                } else if (periodFilter === 'month') {
+                    matchesTime = logTime >= oneMonthAgo;
+                } else if (periodFilter === 'specific') {
+                    const specificInput = document.getElementById('filter-specific').value; // "yyyy-MM-dd"
+                    if (specificInput) {
+                        // Create prefix string: "yyyy-MM-dd"
+                        matchesTime = log.timestamp.startsWith(specificInput);
+                    }
+                }
+
+                return matchesAccount && matchesNode && matchesTime;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No matching transactions found.</td></tr>';
+                return;
+            }
+
+            filtered.forEach((log, index) => {
+                const tr = document.createElement('tr');
+                tr.className = 'log-row';
+                tr.style.animationDelay = `${index * 0.05}s`; // Staggered animation
+                tr.classList.add('animate-entry');
+
+                tr.innerHTML = `
+                    <td style="color: var(--text-secondary); font-family: monospace;">#${log.id}</td>
+                    <td style="font-size: 0.85rem;">${log.timestamp}</td>
+                    <td><span class="badge badge-${log.type}">${log.type}</span></td>
+                    <td>${log.user}</td>
+                    <td style="font-weight:bold; color: var(--text-primary);">$${log.amount}</td>
+                    <td>${log.target || '-'}</td>
+                    <td><span style="color: var(--text-secondary);">Node ${log.node}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-account').value = '';
+            document.getElementById('filter-node').value = '';
+            document.getElementById('filter-period').value = 'all';
+            document.getElementById('filter-specific').value = '';
+            applyFilters();
         }
 
         async function loadUsers() {
