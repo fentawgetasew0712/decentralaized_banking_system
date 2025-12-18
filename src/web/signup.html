@@ -4,49 +4,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign Up - Decentralized Bank</title>
+    <title>Create Account - Decentralized Bank</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <div class="login-container">
-        <h1 style="color: var(--primary); margin-bottom: 2rem;">Create Account</h1>
+    <div class="container"
+        style="display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px;">
+        <div class="card" style="width: 100%; max-width: 450px; text-align: center;">
+            <h1 style="color: var(--primary); margin-bottom: 2rem;">Create Account</h1>
 
-        <div class="input-group">
-            <label>Full Name</label>
-            <input type="text" id="fullname" placeholder="John Doe">
+            <div class="input-group">
+                <input type="text" id="fullname" placeholder=" ">
+                <label>Full Name</label>
+            </div>
+
+            <div class="input-group">
+                <input type="text" id="accountId" placeholder=" " oninput="validateId(this)">
+                <label>Account ID (12 Digits)</label>
+            </div>
+
+            <div class="input-group">
+                <input type="password" id="password" placeholder=" " oninput="validatePassword(this)">
+                <label>Password (Min 6 characters)</label>
+            </div>
+
+            <div class="input-group">
+                <input type="password" id="confirmPassword" placeholder=" " oninput="validateConfirm(this)">
+                <label>Confirm Password</label>
+            </div>
+
+            <div class="input-group">
+                <input type="number" id="amount" placeholder=" " oninput="validateAmount(this)">
+                <label>Initial Deposit (Min: 500)</label>
+            </div>
+
+            <button onclick="register()" class="btn-primary" style="width: 100%; margin-top: 1rem;">Create
+                Account</button>
+
+            <p style="margin-top: 1.5rem; font-size: 0.9rem;">
+                Already have an account? <a href="login.html" class="auth-link">Login</a>
+            </p>
+
+            <p id="error-msg" style="color: var(--danger); margin-top: 1rem; font-weight: 500;"></p>
+            <p id="success-msg" style="color: var(--success); margin-top: 1rem; font-weight: 500;"></p>
         </div>
-
-        <div class="input-group">
-            <label>Account ID (12 Digits)</label>
-            <input type="text" id="accountId" placeholder="e.g. 100000000001">
-        </div>
-
-        <div class="input-group">
-            <label>Password</label>
-            <input type="password" id="password" placeholder="Create a password">
-        </div>
-
-        <div class="input-group">
-            <label>Initial Deposit (Min: 500)</label>
-            <input type="number" id="amount" placeholder="e.g. 1000">
-        </div>
-
-        <button onclick="register()" class="btn-primary" style="width: 100%; margin-top: 1rem;">Sign Up</button>
-
-        <p style="margin-top: 1rem; font-size: 0.9rem;">
-            Already have an account? <a href="login.html" style="color: var(--accent);">Login</a>
-        </p>
-
-        <p id="error-msg" style="color: var(--danger); margin-top: 10px;"></p>
-        <p id="success-msg" style="color: var(--success); margin-top: 10px;"></p>
     </div>
 
     <script>
+        function validateId(input) {
+            if (input.value.length === 0) {
+                input.className = "";
+            } else if (/^\d{12}$/.test(input.value)) {
+                input.className = "valid";
+            } else {
+                input.className = "invalid";
+            }
+        }
+
+        function validatePassword(input) {
+            if (input.value.length === 0) {
+                input.className = "";
+            } else if (input.value.length >= 6) {
+                input.className = "valid";
+            } else {
+                input.className = "invalid";
+            }
+            // re-validate confirm if it has value
+            const confirm = document.getElementById('confirmPassword');
+            if (confirm.value.length > 0) validateConfirm(confirm);
+        }
+
+        function validateConfirm(input) {
+            const pass = document.getElementById('password').value;
+            if (input.value.length === 0) {
+                input.className = "";
+            } else if (input.value === pass && pass.length >= 6) {
+                input.className = "valid";
+            } else {
+                input.className = "invalid";
+            }
+        }
+
+        function validateAmount(input) {
+            if (input.value.length === 0) {
+                input.className = "";
+            } else if (parseInt(input.value) >= 500) {
+                input.className = "valid";
+            } else {
+                input.className = "invalid";
+            }
+        }
+
         async function register() {
             const name = document.getElementById('fullname').value;
             const id = document.getElementById('accountId').value;
             const pass = document.getElementById('password').value;
+            const confirm = document.getElementById('confirmPassword').value;
             const amount = document.getElementById('amount').value;
             const errorMsg = document.getElementById('error-msg');
             const successMsg = document.getElementById('success-msg');
@@ -54,8 +108,18 @@
             errorMsg.innerText = "";
             successMsg.innerText = "";
 
-            if (!name || !pass || !id || !amount) {
+            if (!name || !pass || !id || !amount || !confirm) {
                 errorMsg.innerText = "All fields are required.";
+                return;
+            }
+
+            if (pass.length < 6) {
+                errorMsg.innerText = "Password must be at least 6 characters long.";
+                return;
+            }
+
+            if (pass !== confirm) {
+                errorMsg.innerText = "Passwords do not match.";
                 return;
             }
 
@@ -81,8 +145,12 @@
                 if (result.startsWith("OK")) {
                     successMsg.innerText = "Account Created! Redirecting to login...";
                     setTimeout(() => window.location.href = 'login.html', 2000);
+                } else if (result === "FAIL:EXISTS") {
+                    errorMsg.innerText = "Error: This Account ID is already registered.";
+                } else if (result === "FAIL:MIN_DEPOSIT_500") {
+                    errorMsg.innerText = "Error: Minimum initial deposit is 500.";
                 } else {
-                    errorMsg.innerText = "Registration Failed: " + result;
+                    errorMsg.innerText = "Registration Failed: " + result.replace("FAIL:", "").replace("_", " ");
                 }
             } catch (err) {
                 errorMsg.innerText = "Error connecting to server.";

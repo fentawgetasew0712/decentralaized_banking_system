@@ -131,15 +131,17 @@
     </div>
 
     <script>
-        if (!localStorage.getItem('adminAuth')) {
-            window.location.href = 'admin_login.html';
+        if (localStorage.getItem('userRole') !== 'admin') {
+            window.location.href = 'login.html';
         }
 
         let allTransactionLogs = [];
 
         function logout() {
-            localStorage.removeItem('adminAuth');
-            window.location.href = 'admin_login.html';
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('currentUserName');
+            localStorage.removeItem('userRole');
+            window.location.href = 'login.html';
         }
 
         async function loadAll() {
