@@ -113,7 +113,7 @@
 
             <!-- Right: User Monitor -->
             <div class="card">
-                <h3>User Directory</h3>
+                <h3>User Info List</h3>
                 <div style="overflow-x: auto; margin-top: 1rem;">
                     <table id="users-table">
                         <thead>
@@ -267,7 +267,10 @@
                 const tbody = document.querySelector('#users-table tbody');
                 tbody.innerHTML = '';
 
-                users.forEach(u => {
+                // Filter out the system admin account (ID: 000000000000)
+                const customerUsers = users.filter(u => u.id !== '000000000000');
+
+                customerUsers.forEach(u => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td style="font-family: monospace;">${u.id}</td>
