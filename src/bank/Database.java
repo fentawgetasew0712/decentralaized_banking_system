@@ -25,10 +25,10 @@ public class Database {
         public String id;
         public String name;
         public String password;
-        public int balance;
+        public double balance;
         public String role;
 
-        public Account(String id, String name, String password, int balance, String role) {
+        public Account(String id, String name, String password, double balance, String role) {
             this.id = id;
             this.name = name;
             this.password = password;
@@ -94,7 +94,7 @@ public class Database {
                 + "id VARCHAR(12) PRIMARY KEY, "
                 + "name VARCHAR(100) NOT NULL, "
                 + "password VARCHAR(100) NOT NULL, "
-                + "balance INT DEFAULT 0, "
+                + "balance DECIMAL(15, 2) DEFAULT 0.0, "
                 + "role VARCHAR(20) DEFAULT 'user')";
 
         String sqlTrans = "CREATE TABLE IF NOT EXISTS transactions ("
@@ -110,11 +110,17 @@ public class Database {
             stmt.execute(sqlUsers);
             stmt.execute(sqlTrans);
 
-            // Add role column if it doesn't exist (for existing databases)
+            // Database Migrations
             try {
+                // 1. Upgrade balance from INT to DECIMAL
+                stmt.execute("ALTER TABLE users MODIFY COLUMN balance DECIMAL(15, 2) DEFAULT 0.0");
+            } catch (SQLException e) {
+            }
+
+            try {
+                // 2. Add role column if missed
                 stmt.execute("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'");
             } catch (SQLException e) {
-                // Column might already exist
             }
 
             // Create or Update default admin account
@@ -141,7 +147,7 @@ public class Database {
         }
     }
 
-    public synchronized boolean createAccount(String id, String name, String password, int initialBalance,
+    public synchronized boolean createAccount(String id, String name, String password, double initialBalance,
             String role) {
         if (conn == null)
             return false;
@@ -150,7 +156,7 @@ public class Database {
             pstmt.setString(1, id);
             pstmt.setString(2, name);
             pstmt.setString(3, PasswordUtils.hash(password));
-            pstmt.setInt(4, initialBalance);
+            pstmt.setDouble(4, initialBalance);
             pstmt.setString(5, role);
             pstmt.executeUpdate();
             return true;
@@ -161,7 +167,7 @@ public class Database {
     }
 
     // Default version for regular users
-    public synchronized boolean createAccount(String id, String name, String password, int initialBalance) {
+    public synchronized boolean createAccount(String id, String name, String password, double initialBalance) {
         return createAccount(id, name, password, initialBalance, "user");
     }
 
@@ -195,7 +201,7 @@ public class Database {
                         rs.getString("id"),
                         rs.getString("name"),
                         rs.getString("password"),
-                        rs.getInt("balance"),
+                        rs.getDouble("balance"),
                         rs.getString("role"));
             }
         } catch (SQLException e) {
@@ -204,21 +210,21 @@ public class Database {
         return null;
     }
 
-    public int getBalance(String id) {
+    public double getBalance(String id) {
         Account acc = getAccount(id);
-        return (acc != null) ? acc.balance : -1;
+        return (acc != null) ? acc.balance : -1.0;
     }
 
     public boolean accountExists(String id) {
         return getAccount(id) != null;
     }
 
-    public synchronized void updateBalance(String id, int newBalance) {
+    public synchronized void updateBalance(String id, double newBalance) {
         if (conn == null)
             return;
         String sql = "UPDATE users SET balance = ? WHERE id = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setInt(1, newBalance);
+            pstmt.setDouble(1, newBalance);
             pstmt.setString(2, id);
             pstmt.executeUpdate();
             System.out.println("Database: Updated " + id + " -> $" + newBalance);
@@ -257,7 +263,12 @@ public class Database {
     /**
      * Insert or Update account (Upsert) for synchronization
      */
-    public synchronized void upsertAccount(String id, String name, String password, int balance, String role) {
+    public synchronized void upsertAccount(String id, String name, String password, double balance, String role) { // Changed
+                                                                                                                   // int
+                                                                                                                   // balance
+                                                                                                                   // to
+                                                                                                                   // double
+                                                                                                                   // balance
         if (conn == null)
             return;
 
@@ -267,7 +278,7 @@ public class Database {
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, name);
                 pstmt.setString(2, password);
-                pstmt.setInt(3, balance);
+                pstmt.setDouble(3, balance); // Changed setInt to setDouble
                 pstmt.setString(4, role);
                 pstmt.setString(5, id);
                 pstmt.executeUpdate();
@@ -280,7 +291,7 @@ public class Database {
         }
     }
 
-    public synchronized void upsertAccount(String id, String name, String password, int balance) {
+    public synchronized void upsertAccount(String id, String name, String password, double balance) {
         upsertAccount(id, name, password, balance, "user");
     }
 
@@ -357,7 +368,7 @@ public class Database {
                         rs.getString("id"),
                         rs.getString("name"),
                         rs.getString("password"),
-                        rs.getInt("balance"),
+                        rs.getDouble("balance"), // Changed from getInt to getDouble
                         rs.getString("role")));
             }
         } catch (SQLException e) {
