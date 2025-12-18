@@ -316,8 +316,8 @@ public class RicartNode {
 
         try {
             Socket socket = new Socket();
-            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
-                                                                                                             // timeout
+            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 2000); // 2000ms
+                                                                                                              // timeout
 
             try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
                 out.println(message);

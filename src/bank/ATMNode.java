@@ -28,6 +28,11 @@ public class ATMNode extends RicartNode {
     private String opTarget;
     private volatile String lastTransactionResult = "";
 
+    // Cluster Cache
+    private volatile java.util.List<Database.Transaction> cachedClusterLogs = new java.util.ArrayList<>();
+    private volatile long lastUpdate = 0;
+    private static final long CACHE_TTL = 5000; // 5 seconds cache
+
     /**
      * Constructor for distributed ATM Node
      * 
@@ -62,8 +67,8 @@ public class ATMNode extends RicartNode {
      * Check balance from LOCAL database
      */
     public String checkBalance(String user) {
-        int balance = localDB.getBalance(user);
-        if (balance == -1) {
+        double balance = localDB.getBalance(user);
+        if (balance == -1.0) {
             return "Error";
         }
         return String.valueOf(balance);
@@ -104,10 +109,10 @@ public class ATMNode extends RicartNode {
      */
     public String register(String user, String name, String pass, String amount) {
         try {
-            int initialBalance = Integer.parseInt(amount);
+            double initialBalance = Double.parseDouble(amount);
 
             // Validation
-            if (initialBalance < 500) {
+            if (initialBalance < 500.0) {
                 return "FAIL:MIN_DEPOSIT_500";
             }
 
@@ -177,7 +182,7 @@ public class ATMNode extends RicartNode {
                     String[] parts = response.split(":", 5);
                     if (parts.length >= 5) {
                         String name = parts[1];
-                        int balance = Integer.parseInt(parts[2]);
+                        double balance = Double.parseDouble(parts[2]);
                         String role = parts[3];
                         System.out.println("  ✅ Found account on Node " + peerId);
                         return new Database.Account(userId, name, password, balance, role);
@@ -276,7 +281,7 @@ public class ATMNode extends RicartNode {
                 String userId = parts[1];
                 String name = parts[2];
                 String password = parts[3];
-                int balance = Integer.parseInt(parts[4]);
+                double balance = Double.parseDouble(parts[4]);
                 String role = parts.length > 5 ? parts[5] : "user";
 
                 // Create account in local database (if doesn't exist)
@@ -290,7 +295,7 @@ public class ATMNode extends RicartNode {
             } else if ("REPLICATE_UPDATE".equals(action)) {
                 // REPLICATE_UPDATE:userId:newBalance
                 String userId = parts[1];
-                int newBalance = Integer.parseInt(parts[2]);
+                double newBalance = Double.parseDouble(parts[2]);
 
                 // Update balance in local database
                 if (localDB.accountExists(userId)) {
@@ -321,6 +326,19 @@ public class ATMNode extends RicartNode {
         super.start();
         // Trigger initial sync with peers to get latest data
         new Thread(this::syncWithPeers, "Sync-Thread").start();
+
+        // Start background log aggregator
+        new Thread(() -> {
+            while (true) {
+                try {
+                    // Update cluster logs periodically in background
+                    this.cachedClusterLogs = refreshClusterLogs();
+                    this.lastUpdate = System.currentTimeMillis();
+                    Thread.sleep(10000); // Every 10 seconds
+                } catch (InterruptedException e) {
+                }
+            }
+        }, "Log-Aggregator-Thread").start();
     }
 
     /**
@@ -330,21 +348,19 @@ public class ATMNode extends RicartNode {
         System.out.println("🔄 ATM " + getNodeId() + ": Starting Initial Sync...");
 
         // Simple strategy: Ask ALL peers, merge everything.
-        // In a real system, you might ask just one or use a Merkle tree.
+        int reachablePeers = 0;
         for (int peerId : getAllNodes().keySet()) {
             if (peerId == getNodeId())
                 continue;
 
             try {
-                // We manually send a socket message because RicartNode.sendMessage is for
-                // protocol messages
-                // and we want a request-response flow here.
-                // Actually, let's just use a socket directly like queryPeersForAccount
                 sendSyncRequestToPeer(peerId);
+                reachablePeers++;
             } catch (Exception e) {
-                System.out.println("  ⚠️  Sync: Peer " + peerId + " unreachable.");
+                System.out.println("  ⚠️  Sync: Node " + peerId + " is offline.");
             }
         }
+        System.out.println("✅ ATM " + getNodeId() + " Sync Complete. reached " + reachablePeers + " peers.");
     }
 
     private void sendSyncRequestToPeer(int targetNodeId) {
@@ -367,7 +383,6 @@ public class ATMNode extends RicartNode {
                 // Read response (could be large)
                 String response = in.readLine();
                 if (response != null && response.startsWith("SYNC_RESPONSE:")) {
-                    handleReplicationMessage(response); // Reuse handler or call onSyncResponse
                     onSyncResponse(response);
                 }
             }
@@ -411,7 +426,7 @@ public class ATMNode extends RicartNode {
         for (String accStr : accounts) {
             String[] parts = accStr.split(":");
             if (parts.length >= 5) {
-                localDB.upsertAccount(parts[0], parts[1], parts[2], Integer.parseInt(parts[3]), parts[4]);
+                localDB.upsertAccount(parts[0], parts[1], parts[2], Double.parseDouble(parts[3]), parts[4]);
                 count++;
             }
         }
@@ -458,6 +473,20 @@ public class ATMNode extends RicartNode {
      * Get ALL transactions from the ENTIRE cluster (Local + Remote)
      */
     public java.util.List<Database.Transaction> getAllClusterTransactions() {
+        // Return cached logs if valid, otherwise return local logs (don't block UI)
+        long currentTime = System.currentTimeMillis();
+        if (cachedClusterLogs != null && !cachedClusterLogs.isEmpty() && (currentTime - lastUpdate < CACHE_TTL)) {
+            return cachedClusterLogs;
+        }
+
+        // Return whatever cache we have (could be slightly stale) to keep UI fast
+        if (cachedClusterLogs == null || cachedClusterLogs.isEmpty()) {
+            return new java.util.ArrayList<>(localDB.getAllTransactions());
+        }
+        return cachedClusterLogs;
+    }
+
+    private java.util.List<Database.Transaction> refreshClusterLogs() {
         // 1. Get Local Logs
         java.util.List<Database.Transaction> allLogs = new java.util.ArrayList<>(localDB.getAllTransactions());
 
@@ -468,7 +497,6 @@ public class ATMNode extends RicartNode {
 
             try {
                 // Fetch logs from peer
-                System.out.println("  Admin: Fetching logs from Node " + peerId + "...");
                 java.util.List<Database.Transaction> peerLogs = requestPeerTransactions(peerId);
                 if (peerLogs != null) {
                     allLogs.addAll(peerLogs);
@@ -489,11 +517,15 @@ public class ATMNode extends RicartNode {
         if (targetAddress == null)
             return null;
 
+        String targetStr = targetAddress.getAddress().getHostAddress() + ":" + targetAddress.getPort();
+        System.out.println("  Admin: Fetching logs from Node " + peerId + " (" + targetStr + ")...");
+
         try {
             Socket socket = new Socket();
-            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
-                                                                                                             // Connect
-                                                                                                             // Timeout
+            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 300); // Reduced
+                                                                                                             // timeout
+                                                                                                             // for UI
+                                                                                                             // fetch
 
             try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                     BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
@@ -570,10 +602,10 @@ public class ATMNode extends RicartNode {
         try {
             // 1. DEPOSIT
             if ("DEPOSIT".equals(nextOperation)) {
-                int currentBalance = localDB.getBalance(opUser);
-                if (currentBalance != -1) {
-                    int amountObj = Integer.parseInt(opAmount);
-                    int newBalance = currentBalance + amountObj;
+                double currentBalance = localDB.getBalance(opUser);
+                if (currentBalance != -1.0) {
+                    double amountObj = Double.parseDouble(opAmount);
+                    double newBalance = currentBalance + amountObj;
                     localDB.updateBalance(opUser, newBalance);
 
                     // Broadcast replication
@@ -591,11 +623,11 @@ public class ATMNode extends RicartNode {
 
             // 2. WITHDRAW
             else if ("WITHDRAW".equals(nextOperation)) {
-                int currentBalance = localDB.getBalance(opUser);
-                if (currentBalance != -1) {
-                    int amountObj = Integer.parseInt(opAmount);
+                double currentBalance = localDB.getBalance(opUser);
+                if (currentBalance != -1.0) {
+                    double amountObj = Double.parseDouble(opAmount);
                     if (currentBalance >= amountObj) {
-                        int newBalance = currentBalance - amountObj;
+                        double newBalance = currentBalance - amountObj;
                         localDB.updateBalance(opUser, newBalance);
 
                         // Broadcast replication
@@ -616,14 +648,14 @@ public class ATMNode extends RicartNode {
 
             // 3. TRANSFER
             else if ("TRANSFER".equals(nextOperation)) {
-                int amountObj = Integer.parseInt(opAmount);
-                int senderBalance = localDB.getBalance(opUser);
-                int receiverBalance = localDB.getBalance(opTarget);
+                double amountObj = Double.parseDouble(opAmount);
+                double senderBalance = localDB.getBalance(opUser);
+                double receiverBalance = localDB.getBalance(opTarget);
 
                 // Validate sender has funds AND receiver exists
-                if (senderBalance != -1 && receiverBalance != -1 && senderBalance >= amountObj) {
-                    int newSenderBalance = senderBalance - amountObj;
-                    int newReceiverBalance = receiverBalance + amountObj;
+                if (senderBalance != -1.0 && receiverBalance != -1.0 && senderBalance >= amountObj) {
+                    double newSenderBalance = senderBalance - amountObj;
+                    double newReceiverBalance = receiverBalance + amountObj;
 
                     localDB.updateBalance(opUser, newSenderBalance);
                     localDB.updateBalance(opTarget, newReceiverBalance);
@@ -639,7 +671,7 @@ public class ATMNode extends RicartNode {
                     System.out.println("✅ ATM " + getNodeId() + ": Transferred $" + amountObj + " from " + opUser
                             + " to " + opTarget);
                 } else {
-                    if (receiverBalance == -1) {
+                    if (receiverBalance == -1.0) {
                         lastTransactionResult = "FAIL:RECEIVER_NOT_FOUND";
                     } else {
                         lastTransactionResult = "FAIL:INSUFFICIENT_FUNDS";

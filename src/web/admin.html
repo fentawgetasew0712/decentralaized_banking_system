@@ -113,7 +113,7 @@
 
             <!-- Right: User Monitor -->
             <div class="card">
-                <h3>User Directory</h3>
+                <h3>User Info List</h3>
                 <div style="overflow-x: auto; margin-top: 1rem;">
                     <table id="users-table">
                         <thead>
@@ -158,9 +158,9 @@
             try {
                 const res = await fetch('/api/admin/stats');
                 const stats = await res.json();
-                document.getElementById('stat-users').innerText = stats.totalUsers;
-                document.getElementById('stat-reserves').innerText = '$' + stats.totalReserves;
-                document.getElementById('stat-tx').innerText = stats.totalTransactions;
+                document.getElementById('stat-users').innerText = Number(stats.totalUsers).toLocaleString();
+                document.getElementById('stat-reserves').innerText = '$' + Number(stats.totalReserves).toLocaleString();
+                document.getElementById('stat-tx').innerText = Number(stats.totalTransactions).toLocaleString();
             } catch (e) {
                 console.error("Stats Error:", e);
             }
@@ -241,10 +241,10 @@
 
                 tr.innerHTML = `
                     <td style="color: var(--text-secondary); font-family: monospace;">#${log.id}</td>
-                    <td style="font-size: 0.85rem;">${log.timestamp}</td>
+                     <td style="font-size: 0.85rem;">${log.timestamp}</td>
                     <td><span class="badge badge-${log.type}">${log.type}</span></td>
                     <td>${log.user}</td>
-                    <td style="font-weight:bold; color: var(--text-primary);">$${log.amount}</td>
+                    <td style="font-weight:bold; color: var(--text-primary);">$${Number(log.amount).toLocaleString()}</td>
                     <td>${log.target || '-'}</td>
                     <td><span style="color: var(--text-secondary);">Node ${log.node}</span></td>
                 `;
@@ -270,9 +270,9 @@
                 users.forEach(u => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td style="font-family: monospace;">${u.id}</td>
+                     <td style="font-family: monospace;">${u.id}</td>
                         <td>${u.name}</td>
-                        <td style="color: var(--success); font-weight: bold;">$${u.balance}</td>
+                        <td style="color: var(--success); font-weight: bold;">$${Number(u.balance).toLocaleString()}</td>
                     `;
                     tbody.appendChild(tr);
                 });
