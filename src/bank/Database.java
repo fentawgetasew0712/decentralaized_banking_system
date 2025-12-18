@@ -117,13 +117,24 @@ public class Database {
                 // Column might already exist
             }
 
-            // Create default admin account if it doesn't exist
+            // Create or Update default admin account
             String checkAdmin = "SELECT * FROM users WHERE id = '000000000000'";
             ResultSet rs = stmt.executeQuery(checkAdmin);
             if (!rs.next()) {
-                String insertAdmin = "INSERT INTO users (id, name, password, balance, role) VALUES ('000000000000', 'System Admin', 'admin123', 0, 'admin')";
+                String insertAdmin = "INSERT INTO users (id, name, password, balance, role) VALUES ('000000000000', 'System Admin', '"
+                        + PasswordUtils.hash("admin123") + "', 0, 'admin')";
                 stmt.executeUpdate(insertAdmin);
-                System.out.println("Database: Default admin account created (000000000000 / admin123)");
+                System.out.println("Database: Default admin account created (000000000000 / admin123 [hashed])");
+            } else {
+                String currentPass = rs.getString("password");
+                if ("admin123".equals(currentPass)) {
+                    String updateAdmin = "UPDATE users SET password = ? WHERE id = '000000000000'";
+                    try (PreparedStatement pstmt = conn.prepareStatement(updateAdmin)) {
+                        pstmt.setString(1, PasswordUtils.hash("admin123"));
+                        pstmt.executeUpdate();
+                        System.out.println("Database: Migrated admin password to hash");
+                    }
+                }
             }
         } catch (SQLException e) {
             System.err.println("Init DB Error: " + e.getMessage());
@@ -138,7 +149,7 @@ public class Database {
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, id);
             pstmt.setString(2, name);
-            pstmt.setString(3, password);
+            pstmt.setString(3, PasswordUtils.hash(password));
             pstmt.setInt(4, initialBalance);
             pstmt.setString(5, role);
             pstmt.executeUpdate();
@@ -157,12 +168,15 @@ public class Database {
     public boolean authenticate(String id, String password) {
         if (conn == null)
             return false;
-        String sql = "SELECT * FROM users WHERE id = ? AND password = ?";
+        String sql = "SELECT password FROM users WHERE id = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, id);
-            pstmt.setString(2, password);
             ResultSet rs = pstmt.executeQuery();
-            return rs.next();
+            if (rs.next()) {
+                String storedHash = rs.getString("password");
+                return storedHash.equals(PasswordUtils.hash(password));
+            }
+            return false;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;

@@ -31,23 +31,39 @@
                 <div class="actions-grid">
                     <div class="card action-card">
                         <h3>Withdraw</h3>
-                        <input type="number" id="withdraw-amount" placeholder="Amount">
+                        <div class="input-group">
+                            <input type="number" id="withdraw-amount" placeholder=" "
+                                oninput="this.className=this.value?'valid':''">
+                            <label>Amount to Withdraw</label>
+                        </div>
                         <button class="btn-danger" onclick="performAction('WITHDRAW')">Withdraw</button>
                     </div>
 
                     <div class="card action-card">
                         <h3>Deposit</h3>
-                        <input type="number" id="deposit-amount" placeholder="Amount">
+                        <div class="input-group">
+                            <input type="number" id="deposit-amount" placeholder=" "
+                                oninput="this.className=this.value?'valid':''">
+                            <label>Amount to Deposit</label>
+                        </div>
                         <button class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
                     </div>
 
                     <div class="card action-card" style="grid-column: span 2;">
-                        <h3>Transfer</h3>
-                        <div class="input-group">
-                            <input type="text" id="transfer-target" placeholder="Recipient Account (e.g. user2)">
-                            <input type="number" id="transfer-amount" placeholder="Amount">
-                            <button class="btn-primary" onclick="performAction('TRANSFER')">Transfer Funds</button>
+                        <h3>Transfer Funds</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px;">
+                            <div class="input-group">
+                                <input type="text" id="transfer-target" placeholder=" "
+                                    oninput="this.className=this.value?'valid':''">
+                                <label>Recipient Account ID</label>
+                            </div>
+                            <div class="input-group">
+                                <input type="number" id="transfer-amount" placeholder=" "
+                                    oninput="this.className=this.value?'valid':''">
+                                <label>Transfer Amount</label>
+                            </div>
                         </div>
+                        <button class="btn-primary" onclick="performAction('TRANSFER')">Confirm Transfer</button>
                     </div>
                 </div>
 
