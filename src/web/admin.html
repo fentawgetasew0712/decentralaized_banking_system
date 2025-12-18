@@ -50,8 +50,9 @@
                 <!-- Filters -->
                 <div class="filter-container">
                     <div class="filter-group">
-                        <div class="input-group">
-                            <input type="text" id="filter-account" placeholder=" " onkeyup="applyFilters()">
+                        <div class="input-group" style="max-width: 250px;">
+                            <input type="text" id="filter-account" placeholder=" " onkeyup="applyFilters()"
+                                style="width: 100%;">
                             <label>Search User ID</label>
                         </div>
                     </div>
@@ -158,9 +159,9 @@
             try {
                 const res = await fetch('/api/admin/stats');
                 const stats = await res.json();
-                document.getElementById('stat-users').innerText = stats.totalUsers;
-                document.getElementById('stat-reserves').innerText = '$' + stats.totalReserves;
-                document.getElementById('stat-tx').innerText = stats.totalTransactions;
+                document.getElementById('stat-users').innerText = Number(stats.totalUsers).toLocaleString();
+                document.getElementById('stat-reserves').innerText = '$' + Number(stats.totalReserves).toLocaleString();
+                document.getElementById('stat-tx').innerText = Number(stats.totalTransactions).toLocaleString();
             } catch (e) {
                 console.error("Stats Error:", e);
             }
@@ -228,6 +229,12 @@
                 return matchesAccount && matchesNode && matchesTime;
             });
 
+            // Sort by timestamp (most recent first)
+            filtered.sort((a, b) => {
+                // Compare timestamps in descending order (newest first)
+                return b.timestamp.localeCompare(a.timestamp);
+            });
+
             if (filtered.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No matching transactions found.</td></tr>';
                 return;
@@ -244,7 +251,7 @@
                     <td style="font-size: 0.85rem;">${log.timestamp}</td>
                     <td><span class="badge badge-${log.type}">${log.type}</span></td>
                     <td>${log.user}</td>
-                    <td style="font-weight:bold; color: var(--text-primary);">$${log.amount}</td>
+                    <td style="font-weight:bold; color: var(--text-primary);">$${Number(log.amount).toLocaleString()}</td>
                     <td>${log.target || '-'}</td>
                     <td><span style="color: var(--text-secondary);">Node ${log.node}</span></td>
                 `;
@@ -272,7 +279,7 @@
                     tr.innerHTML = `
                         <td style="font-family: monospace;">${u.id}</td>
                         <td>${u.name}</td>
-                        <td style="color: var(--success); font-weight: bold;">$${u.balance}</td>
+                        <td style="color: var(--success); font-weight: bold;">$${Number(u.balance).toLocaleString()}</td>
                     `;
                     tbody.appendChild(tr);
                 });

@@ -116,8 +116,9 @@
                 const res = await fetch(`/api/balance?user=${currentUser}&t=${Date.now()}`);
                 if (res.status !== 200) throw new Error("Failed");
                 const data = await res.text();
-                document.getElementById('balance').innerText = data;
-                log("Balance updated: $" + data);
+                const formattedBalance = Number(data).toLocaleString();
+                document.getElementById('balance').innerText = formattedBalance;
+                log("Balance updated: $" + formattedBalance);
             } catch (e) {
                 document.getElementById('balance').innerText = "Error";
                 log("Error: Could not connect to Bank Node.");
