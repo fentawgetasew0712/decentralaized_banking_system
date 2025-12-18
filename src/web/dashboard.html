@@ -36,7 +36,9 @@
                                 oninput="this.className=this.value?'valid':''">
                             <label>Amount to Withdraw</label>
                         </div>
-                        <button class="btn-danger" onclick="performAction('WITHDRAW')">Withdraw</button>
+                        <button class="btn-danger" id="btn-WITHDRAW"
+                            onclick="performAction('WITHDRAW')">Withdraw</button>
+                        <p id="msg-WITHDRAW" style="margin-top: 10px; font-weight: 500; min-height: 1rem;"></p>
                     </div>
 
                     <div class="card action-card">
@@ -46,7 +48,8 @@
                                 oninput="this.className=this.value?'valid':''">
                             <label>Amount to Deposit</label>
                         </div>
-                        <button class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
+                        <button class="btn-success" id="btn-DEPOSIT" onclick="performAction('DEPOSIT')">Deposit</button>
+                        <p id="msg-DEPOSIT" style="margin-top: 10px; font-weight: 500; min-height: 1rem;"></p>
                     </div>
 
                     <div class="card action-card" style="grid-column: span 2;">
@@ -63,7 +66,9 @@
                                 <label>Transfer Amount</label>
                             </div>
                         </div>
-                        <button class="btn-primary" onclick="performAction('TRANSFER')">Confirm Transfer</button>
+                        <button class="btn-primary" id="btn-TRANSFER" onclick="performAction('TRANSFER')">Confirm
+                            Transfer</button>
+                        <p id="msg-TRANSFER" style="margin-top: 10px; font-weight: 500; min-height: 1rem;"></p>
                     </div>
                 </div>
 
@@ -129,6 +134,9 @@
 
         async function performAction(type) {
             let amount, target = '';
+            const btn = document.getElementById(`btn-${type}`);
+            const msgEl = document.getElementById(`msg-${type}`);
+            const originalBtnText = btn.innerText;
 
             if (type === 'WITHDRAW') amount = document.getElementById('withdraw-amount').value;
             if (type === 'DEPOSIT') amount = document.getElementById('deposit-amount').value;
@@ -138,14 +146,21 @@
             }
 
             if (!amount) {
-                alert("Please enter an amount");
+                msgEl.style.color = "var(--danger)";
+                msgEl.innerText = "Error: Please enter an amount.";
                 return;
             }
             if (type === 'TRANSFER' && !target) {
-                alert("Please enter a recipient");
+                msgEl.style.color = "var(--danger)";
+                msgEl.innerText = "Error: Please enter a recipient.";
                 return;
             }
 
+            // Start Processing
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+            msgEl.style.color = "var(--accent)";
+            msgEl.innerText = "Your request is processing...";
             log(`Requesting ${type} for ${currentUser}...`);
 
             try {
@@ -154,13 +169,32 @@
                     body: JSON.stringify({ type, user: currentUser, amount, target })
                 });
                 const result = await res.text();
-                log(result);
 
-                // Poll for balance update
-                setTimeout(refreshBalance, 2000);
-                setTimeout(refreshBalance, 5000); // Double check
+                if (result.startsWith("OK")) {
+                    msgEl.style.color = "var(--success)";
+                    msgEl.innerText = "✓ Transaction Successfully Completed!";
+                    log("SUCCESS: " + result);
+                } else {
+                    msgEl.style.color = "var(--danger)";
+                    msgEl.innerText = "✗ Failed: " + result.replace("FAIL:", "").replace(/_/g, " ");
+                    log("FAILED: " + result);
+                }
+
+                // Refresh balance
+                refreshBalance();
+
+                // Reset UI after 3 seconds
+                setTimeout(() => {
+                    msgEl.innerText = "";
+                }, 4000);
+
             } catch (e) {
+                msgEl.style.color = "var(--danger)";
+                msgEl.innerText = "✗ Network Error. Try again.";
                 log("Action failed: Network Error");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = originalBtnText;
             }
         }
 
