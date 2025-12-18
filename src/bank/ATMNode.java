@@ -28,6 +28,11 @@ public class ATMNode extends RicartNode {
     private String opTarget;
     private volatile String lastTransactionResult = "";
 
+    // Cluster Cache
+    private volatile java.util.List<Database.Transaction> cachedClusterLogs = new java.util.ArrayList<>();
+    private volatile long lastUpdate = 0;
+    private static final long CACHE_TTL = 5000; // 5 seconds cache
+
     /**
      * Constructor for distributed ATM Node
      * 
@@ -321,6 +326,19 @@ public class ATMNode extends RicartNode {
         super.start();
         // Trigger initial sync with peers to get latest data
         new Thread(this::syncWithPeers, "Sync-Thread").start();
+
+        // Start background log aggregator
+        new Thread(() -> {
+            while (true) {
+                try {
+                    // Update cluster logs periodically in background
+                    this.cachedClusterLogs = refreshClusterLogs();
+                    this.lastUpdate = System.currentTimeMillis();
+                    Thread.sleep(10000); // Every 10 seconds
+                } catch (InterruptedException e) {
+                }
+            }
+        }, "Log-Aggregator-Thread").start();
     }
 
     /**
@@ -458,6 +476,14 @@ public class ATMNode extends RicartNode {
      * Get ALL transactions from the ENTIRE cluster (Local + Remote)
      */
     public java.util.List<Database.Transaction> getAllClusterTransactions() {
+        // Return cached logs if available, otherwise fetch locally
+        if (cachedClusterLogs == null || cachedClusterLogs.isEmpty()) {
+            return new java.util.ArrayList<>(localDB.getAllTransactions());
+        }
+        return cachedClusterLogs;
+    }
+
+    private java.util.List<Database.Transaction> refreshClusterLogs() {
         // 1. Get Local Logs
         java.util.List<Database.Transaction> allLogs = new java.util.ArrayList<>(localDB.getAllTransactions());
 
@@ -468,7 +494,6 @@ public class ATMNode extends RicartNode {
 
             try {
                 // Fetch logs from peer
-                System.out.println("  Admin: Fetching logs from Node " + peerId + "...");
                 java.util.List<Database.Transaction> peerLogs = requestPeerTransactions(peerId);
                 if (peerLogs != null) {
                     allLogs.addAll(peerLogs);
@@ -489,11 +514,15 @@ public class ATMNode extends RicartNode {
         if (targetAddress == null)
             return null;
 
+        String targetStr = targetAddress.getAddress().getHostAddress() + ":" + targetAddress.getPort();
+        System.out.println("  Admin: Fetching logs from Node " + peerId + " (" + targetStr + ")...");
+
         try {
             Socket socket = new Socket();
-            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
-                                                                                                             // Connect
-                                                                                                             // Timeout
+            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 300); // Reduced
+                                                                                                             // timeout
+                                                                                                             // for UI
+                                                                                                             // fetch
 
             try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                     BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
