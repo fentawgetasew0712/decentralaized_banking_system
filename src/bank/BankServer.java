@@ -84,14 +84,14 @@ public class BankServer {
                         return "FAIL:INVALID_ARGS";
                     String rUser = parts[1];
                     String rPass = parts[2];
-                    int rAmount = 0;
+                    double rAmount = 0;
                     try {
-                        rAmount = Integer.parseInt(parts[3]);
+                        rAmount = Double.parseDouble(parts[3]);
                     } catch (NumberFormatException e) {
                         return "FAIL:INVALID_AMOUNT";
                     }
 
-                    if (rAmount <= 500) {
+                    if (rAmount <= 500.0) {
                         return "FAIL:MIN_DEPOSIT_500";
                     }
 
@@ -115,17 +115,17 @@ public class BankServer {
 
                 case "BALANCE":
                     String userId = parts[1];
-                    int bal = db.getBalance(userId);
-                    if (bal == -1)
+                    double bal = db.getBalance(userId);
+                    if (bal == -1.0)
                         return "FAIL:USER_NOT_FOUND";
                     return "OK:" + bal;
 
                 case "WITHDRAW":
                     String wUser = parts[1];
-                    int wAmount = Integer.parseInt(parts[2]);
-                    int wBal = db.getBalance(wUser);
+                    double wAmount = Double.parseDouble(parts[2]);
+                    double wBal = db.getBalance(wUser);
 
-                    if (wBal == -1)
+                    if (wBal == -1.0)
                         return "FAIL:USER_NOT_FOUND";
                     if (wBal >= wAmount) {
                         db.updateBalance(wUser, wBal - wAmount);
@@ -137,10 +137,10 @@ public class BankServer {
 
                 case "DEPOSIT":
                     String dUser = parts[1];
-                    int dAmount = Integer.parseInt(parts[2]);
-                    int dBal = db.getBalance(dUser);
+                    double dAmount = Double.parseDouble(parts[2]);
+                    double dBal = db.getBalance(dUser);
 
-                    if (dBal == -1)
+                    if (dBal == -1.0)
                         return "FAIL:USER_NOT_FOUND";
 
                     db.updateBalance(dUser, dBal + dAmount);
@@ -151,10 +151,10 @@ public class BankServer {
                     // TRANSFER <FromUser> <ToUser> <Amount>
                     String fromUser = parts[1];
                     String toUser = parts[2];
-                    int tAmount = Integer.parseInt(parts[3]);
+                    double tAmount = Double.parseDouble(parts[3]);
 
-                    int fBal = db.getBalance(fromUser);
-                    if (fBal == -1)
+                    double fBal = db.getBalance(fromUser);
+                    if (fBal == -1.0)
                         return "FAIL:SENDER_NOT_FOUND";
 
                     if (!db.accountExists(toUser)) {
