@@ -624,9 +624,14 @@ public class ATMNode extends RicartNode {
         try {
             // 1. DEPOSIT
             if ("DEPOSIT".equals(nextOperation)) {
+                int amountObj = Integer.parseInt(opAmount);
+                if (amountObj <= 0) {
+                    lastTransactionResult = "FAIL:INVALID_AMOUNT";
+                    return;
+                }
+
                 int currentBalance = localDB.getBalance(opUser);
                 if (currentBalance != -1) {
-                    int amountObj = Integer.parseInt(opAmount);
                     int newBalance = currentBalance + amountObj;
                     localDB.updateBalance(opUser, newBalance);
 
@@ -645,9 +650,14 @@ public class ATMNode extends RicartNode {
 
             // 2. WITHDRAW
             else if ("WITHDRAW".equals(nextOperation)) {
+                int amountObj = Integer.parseInt(opAmount);
+                if (amountObj <= 0) {
+                    lastTransactionResult = "FAIL:INVALID_AMOUNT";
+                    return;
+                }
+
                 int currentBalance = localDB.getBalance(opUser);
                 if (currentBalance != -1) {
-                    int amountObj = Integer.parseInt(opAmount);
                     if (currentBalance >= amountObj) {
                         int newBalance = currentBalance - amountObj;
                         localDB.updateBalance(opUser, newBalance);
@@ -671,6 +681,11 @@ public class ATMNode extends RicartNode {
             // 3. TRANSFER
             else if ("TRANSFER".equals(nextOperation)) {
                 int amountObj = Integer.parseInt(opAmount);
+                if (amountObj <= 0) {
+                    lastTransactionResult = "FAIL:INVALID_AMOUNT";
+                    return;
+                }
+
                 int senderBalance = localDB.getBalance(opUser);
                 int receiverBalance = localDB.getBalance(opTarget);
 
