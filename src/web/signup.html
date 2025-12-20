@@ -15,8 +15,22 @@
             <h1 style="color: var(--primary); margin-bottom: 2rem;">Create Account</h1>
 
             <div class="input-group">
-                <input type="text" id="fullname" placeholder=" ">
-                <label>Full Name</label>
+                <input type="text" id="firstName" placeholder=" ">
+                <label>First Name</label>
+            </div>
+            <div class="input-group">
+                <input type="text" id="secondName" placeholder=" ">
+                <label>Second Name</label>
+            </div>
+            <div class="input-group">
+                <input type="text" id="thirdName" placeholder=" ">
+                <label>Third Name</label>
+            </div>
+
+            <div class="input-group has-prefix">
+                <input type="text" id="phone" placeholder=" " oninput="validatePhone(this)">
+                <label>Phone Number</label>
+                <span class="prefix">+251</span>
             </div>
 
             <div class="input-group">
@@ -86,6 +100,16 @@
             }
         }
 
+        function validatePhone(input) {
+            if (input.value.length === 0) {
+                input.className = "";
+            } else if (/^9\d{8}$/.test(input.value)) {
+                input.className = "valid";
+            } else {
+                input.className = "invalid";
+            }
+        }
+
         function validateAmount(input) {
             if (input.value.length === 0) {
                 input.className = "";
@@ -97,7 +121,10 @@
         }
 
         async function register() {
-            const name = document.getElementById('fullname').value;
+            const fName = document.getElementById('firstName').value;
+            const sName = document.getElementById('secondName').value;
+            const tName = document.getElementById('thirdName').value;
+            const phone = document.getElementById('phone').value;
             const id = document.getElementById('accountId').value;
             const pass = document.getElementById('password').value;
             const confirm = document.getElementById('confirmPassword').value;
@@ -108,28 +135,57 @@
             errorMsg.innerText = "";
             successMsg.innerText = "";
 
-            if (!name || !pass || !id || !amount || !confirm) {
+            // Get elements for highlighting
+            const fields = {
+                'firstName': fName,
+                'secondName': sName,
+                'thirdName': tName,
+                'phone': phone,
+                'accountId': id,
+                'password': pass,
+                'confirmPassword': confirm,
+                'amount': amount
+            };
+
+            // Clear previous highlighting
+            Object.keys(fields).forEach(fid => document.getElementById(fid).classList.remove('invalid'));
+
+            if (!fName || !sName || !tName || !phone || !pass || !id || !amount || !confirm) {
                 errorMsg.innerText = "All fields are required.";
+                // Highlight all empty fields
+                Object.keys(fields).forEach(fid => {
+                    if (!document.getElementById(fid).value) document.getElementById(fid).classList.add('invalid');
+                });
                 return;
             }
 
             if (pass.length < 6) {
                 errorMsg.innerText = "Password must be at least 6 characters long.";
+                document.getElementById('password').classList.add('invalid');
                 return;
             }
 
             if (pass !== confirm) {
                 errorMsg.innerText = "Passwords do not match.";
+                document.getElementById('confirmPassword').classList.add('invalid');
                 return;
             }
 
             if (!/^\d{12}$/.test(id)) {
                 errorMsg.innerText = "Account ID must be exactly 12 digits.";
+                document.getElementById('accountId').classList.add('invalid');
                 return;
             }
 
             if (parseInt(amount) <= 500) {
                 errorMsg.innerText = "Initial Deposit must be GREATER than 500.";
+                document.getElementById('amount').classList.add('invalid');
+                return;
+            }
+
+            if (!/^9\d{8}$/.test(phone)) {
+                errorMsg.innerText = "Phone number must be 9 digits starting with 9.";
+                document.getElementById('phone').classList.add('invalid');
                 return;
             }
 
@@ -137,7 +193,7 @@
                 const response = await fetch('/api/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, user: id, pass, amount })
+                    body: JSON.stringify({ fName, sName, tName, phone, user: id, pass, amount })
                 });
 
                 const result = await response.text();

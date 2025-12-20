@@ -102,7 +102,8 @@ public class ATMNode extends RicartNode {
     /**
      * Register new account with REPLICATION to all peers
      */
-    public String register(String user, String name, String pass, String amount) {
+    public String register(String user, String fName, String sName, String tName, String phone, String pass,
+            String amount) {
         try {
             int initialBalance = Integer.parseInt(amount);
 
@@ -115,29 +116,48 @@ public class ATMNode extends RicartNode {
                 return "FAIL:INVALID_ID_FORMAT";
             }
 
+            if (!phone.matches("^9\\d{8}$")) {
+                return "FAIL:INVALID_PHONE_FORMAT";
+            }
+
             // Check if account already exists
             if (localDB.accountExists(user)) {
                 return "FAIL:EXISTS";
             }
 
             // Create account in LOCAL database first
-            boolean created = localDB.createAccount(user, name, pass, initialBalance);
+            String result = localDB.createAccountExtended(user, fName, sName, tName, phone, pass, initialBalance,
+                    "user");
 
-            if (created) {
+            if ("OK".equals(result)) {
                 // REPLICATE to all peer nodes
-                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + name + ":" + pass + ":" + initialBalance
+                // New Format: REPLICATE_CREATE:userId:fName:sName:tName:phone:pass:balance:role
+                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + fName + ":" + sName + ":" + tName + ":"
+                        + phone + ":" + pass + ":" + initialBalance
                         + ":user";
                 broadcastReplication(replicationMsg);
 
                 System.out.println("✅ ATM " + getNodeId() + ": Account created and replicated to all peers");
                 return "OK:CREATED";
             } else {
-                return "FAIL:CREATE_ERROR";
+                // Return specific error from database (e.g. FAIL:EXISTS, FAIL:SQL_ERROR:...)
+                return result;
             }
 
         } catch (NumberFormatException e) {
             return "FAIL:INVALID_AMOUNT";
         }
+    }
+
+    /**
+     * Legacy register method for compatibility with any old calls
+     */
+    public String register(String user, String name, String pass, String amount) {
+        String[] parts = name.split(" ");
+        String fName = parts.length > 0 ? parts[0] : "";
+        String sName = parts.length > 1 ? parts[1] : "";
+        String tName = parts.length > 2 ? parts[2] : "";
+        return register(user, fName, sName, tName, "000", pass, amount);
     }
 
     /**
@@ -179,6 +199,7 @@ public class ATMNode extends RicartNode {
                         String name = parts[1];
                         int balance = Integer.parseInt(parts[2]);
                         String role = parts[3];
+                        // Cache other fields if present (from updated peers)
                         System.out.println("  ✅ Found account on Node " + peerId);
                         return new Database.Account(userId, name, password, balance, role);
                     }
@@ -272,21 +293,44 @@ public class ATMNode extends RicartNode {
 
         try {
             if ("REPLICATE_CREATE".equals(action)) {
-                // REPLICATE_CREATE:userId:name:password:balance
-                String userId = parts[1];
-                String name = parts[2];
-                String password = parts[3];
-                int balance = Integer.parseInt(parts[4]);
-                String role = parts.length > 5 ? parts[5] : "user";
+                // New Format:
+                // REPLICATE_CREATE:userId:fName:sName:tName:phone:password:balance:role
+                if (parts.length >= 8) {
+                    String userId = parts[1];
+                    String fName = parts[2];
+                    String sName = parts[3];
+                    String tName = parts[4];
+                    String phone = parts[5];
+                    String password = parts[6];
+                    int balance = Integer.parseInt(parts[7]);
+                    String role = parts.length > 8 ? parts[8] : "user";
 
-                // Create account in local database (if doesn't exist)
-                if (!localDB.accountExists(userId)) {
-                    localDB.createAccount(userId, name, password, balance, role);
-                    System.out.println("  ✅ Replicated account creation: " + userId + " (Role: " + role + ")");
+                    if (!localDB.accountExists(userId)) {
+                        localDB.createAccount(userId, fName, sName, tName, phone, password, balance, role);
+                        System.out.println("  ✅ Replicated account creation: " + userId + " (Role: " + role + ")");
+                    }
                 } else {
-                    System.out.println("  ⚠️  Account already exists: " + userId);
+                    // Fallback to legacy format
+                    String userId = parts[1];
+                    String name = parts[2];
+                    String password = parts[3];
+                    int balance = Integer.parseInt(parts[4]);
+                    String role = parts.length > 5 ? parts[5] : "user";
+
+                    if (!localDB.accountExists(userId)) {
+                        localDB.createAccount(userId, name, password, balance, role);
+                        System.out.println("  ✅ Replicated account creation (Legacy): " + userId);
+                    }
                 }
 
+            } else if ("REPLICATE_PASSWORD_UPDATE".equals(action)) {
+                // REPLICATE_PASSWORD_UPDATE:userId:newPasswordHash
+                String userId = parts[1];
+                String newPassHash = parts[2];
+                if (localDB.accountExists(userId)) {
+                    localDB.updatePasswordWithHash(userId, newPassHash);
+                    System.out.println("  ✅ Replicated password update: " + userId);
+                }
             } else if ("REPLICATE_UPDATE".equals(action)) {
                 // REPLICATE_UPDATE:userId:newBalance
                 String userId = parts[1];
@@ -410,7 +454,13 @@ public class ATMNode extends RicartNode {
         String[] accounts = data.split("\\|");
         for (String accStr : accounts) {
             String[] parts = accStr.split(":");
-            if (parts.length >= 5) {
+            if (parts.length >= 8) {
+                // New schema SYNC
+                localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5],
+                        Integer.parseInt(parts[6]), parts[7]);
+                count++;
+            } else if (parts.length >= 5) {
+                // Legacy schema SYNC
                 localDB.upsertAccount(parts[0], parts[1], parts[2], Integer.parseInt(parts[3]), parts[4]);
                 count++;
             }
@@ -649,6 +699,23 @@ public class ATMNode extends RicartNode {
         } catch (Exception e) {
             lastTransactionResult = "FAIL:EXCEPTION:" + e.getMessage();
             e.printStackTrace();
+        }
+    }
+
+    public String forgetPassword(String id, String fName, String sName, String tName, String phone, String newPass) {
+        // 1. Verify details locally
+        if (localDB.verifyForgetDetails(id, fName, sName, tName, phone)) {
+            // 2. Update locally
+            localDB.updatePassword(id, newPass);
+
+            // 3. Replicate to peers
+            String passHash = PasswordUtils.hash(newPass);
+            broadcastReplication("REPLICATE_PASSWORD_UPDATE:" + id + ":" + passHash);
+
+            System.out.println("✅ ATM " + getNodeId() + ": Password reset for " + id + " and replicated");
+            return "OK:PASSWORD_RESET";
+        } else {
+            return "FAIL:DETAILS_NOT_MATCHING";
         }
     }
 }

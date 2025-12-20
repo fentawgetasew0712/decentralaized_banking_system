@@ -22,7 +22,12 @@
                 <input type="password" id="password" placeholder=" ">
                 <label>Password</label>
             </div>
-            <button onclick="login()" class="btn-primary" style="width: 100%; margin-top: 1rem;">Access Account</button>
+            <button onclick="login()" class="btn-primary" style="width: 100%; margin-top: 1rem;">Login</button>
+
+            <p style="margin-top: 1rem; font-size: 0.9rem;">
+                <a href="forget_password.html" class="auth-link">Forgot Password?</a>
+            </p>
+
             <p style="margin-top: 1.5rem; font-size: 0.9rem;">
                 Don't have an account? <a href="signup.html" class="auth-link">Create Account</a>
             </p>
@@ -46,14 +51,22 @@
             const errorMsg = document.getElementById('error-msg');
 
             errorMsg.innerText = "";
+            const accountInput = document.getElementById('accountId');
+            const passwordInput = document.getElementById('password');
+
+            // Clear previous errors
+            accountInput.classList.remove('invalid');
+            passwordInput.classList.remove('invalid');
 
             // 1. Validation Logic
             if (!/^\d{12}$/.test(userId)) {
                 errorMsg.innerText = "Error: Account ID must be exactly 12 digits.";
+                accountInput.classList.add('invalid');
                 return;
             }
             if (!password) {
                 errorMsg.innerText = "Error: Password is required.";
+                passwordInput.classList.add('invalid');
                 return;
             }
 

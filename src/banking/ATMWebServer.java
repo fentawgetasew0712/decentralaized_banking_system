@@ -32,6 +32,7 @@ public class ATMWebServer {
         server.createContext("/api/login", new LoginHandler());
         server.createContext("/api/logout", new LogoutHandler());
         server.createContext("/api/register", new RegisterHandler());
+        server.createContext("/api/forget", new ForgetHandler());
 
         // Admin Endpoints
         server.createContext("/api/admin/logs", new AdminLogsHandler());
@@ -180,13 +181,46 @@ public class ATMWebServer {
                 System.out.println("DEBUG Register JSON: " + json);
 
                 String user = extractJson(json, "user");
-                String name = extractJson(json, "name");
+                String fName = extractJson(json, "fName");
+                String sName = extractJson(json, "sName");
+                String tName = extractJson(json, "tName");
+                String phone = extractJson(json, "phone");
                 String pass = extractJson(json, "pass");
                 String amount = extractJson(json, "amount");
 
                 System.out.println("DEBUG Register Parsed: User=" + user + ", Amt='" + amount + "'");
 
-                String result = atmNode.register(user, name, pass, amount);
+                String result = atmNode.register(user, fName, sName, tName, phone, pass, amount);
+
+                t.sendResponseHeaders(200, result.length());
+                OutputStream os = t.getResponseBody();
+                os.write(result.getBytes());
+                os.close();
+            }
+        }
+    }
+
+    class ForgetHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange t) throws IOException {
+            if ("POST".equals(t.getRequestMethod())) {
+                InputStreamReader isr = new InputStreamReader(t.getRequestBody(), "utf-8");
+                BufferedReader br = new BufferedReader(isr);
+                StringBuilder buf = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) {
+                    buf.append(line);
+                }
+
+                String json = buf.toString();
+                String user = extractJson(json, "user");
+                String fName = extractJson(json, "fName");
+                String sName = extractJson(json, "sName");
+                String tName = extractJson(json, "tName");
+                String phone = extractJson(json, "phone");
+                String newPass = extractJson(json, "newPass");
+
+                String result = atmNode.forgetPassword(user, fName, sName, tName, phone, newPass);
 
                 t.sendResponseHeaders(200, result.length());
                 OutputStream os = t.getResponseBody();

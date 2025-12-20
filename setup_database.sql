@@ -7,9 +7,14 @@ USE bank_system;
 -- 3. Create the Users Table
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(12) PRIMARY KEY,
+    first_name VARCHAR(50),
+    second_name VARCHAR(50),
+    third_name VARCHAR(50),
+    phone_number VARCHAR(20),
     name VARCHAR(100) NOT NULL,
     password VARCHAR(100) NOT NULL,
-    balance INT DEFAULT 0
+    balance INT DEFAULT 0,
+    role VARCHAR(20) DEFAULT 'user'
 );
 
 -- 4. (Optional) Insert Test Data
