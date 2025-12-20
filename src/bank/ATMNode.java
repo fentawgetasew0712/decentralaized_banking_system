@@ -62,8 +62,8 @@ public class ATMNode extends RicartNode {
      * Check balance from LOCAL database
      */
     public String checkBalance(String user) {
-        int balance = localDB.getBalance(user);
-        if (balance == -1) {
+        double balance = localDB.getBalance(user);
+        if (balance == -1.0) {
             return "Error";
         }
         return String.valueOf(balance);
@@ -105,7 +105,7 @@ public class ATMNode extends RicartNode {
     public String register(String user, String fName, String sName, String tName, String phone, String pass,
             String amount) {
         try {
-            int initialBalance = Integer.parseInt(amount);
+            double initialBalance = Double.parseDouble(amount);
 
             // Validation
             if (initialBalance < 500) {
@@ -197,7 +197,7 @@ public class ATMNode extends RicartNode {
                     String[] parts = response.split(":", 5);
                     if (parts.length >= 5) {
                         String name = parts[1];
-                        int balance = Integer.parseInt(parts[2]);
+                        double balance = Double.parseDouble(parts[2]);
                         String role = parts[3];
                         // Cache other fields if present (from updated peers)
                         System.out.println("  ✅ Found account on Node " + peerId);
@@ -306,7 +306,7 @@ public class ATMNode extends RicartNode {
                     String tName = parts[4];
                     String phone = parts[5];
                     String password = parts[6];
-                    int balance = Integer.parseInt(parts[7]);
+                    double balance = Double.parseDouble(parts[7]);
                     String role = parts.length > 8 ? parts[8] : "user";
 
                     if (!localDB.accountExists(userId)) {
@@ -318,7 +318,7 @@ public class ATMNode extends RicartNode {
                     String userId = parts[1];
                     String name = parts[2];
                     String password = parts[3];
-                    int balance = Integer.parseInt(parts[4]);
+                    double balance = Double.parseDouble(parts[4]);
                     String role = parts.length > 5 ? parts[5] : "user";
 
                     if (!localDB.accountExists(userId)) {
@@ -338,7 +338,7 @@ public class ATMNode extends RicartNode {
             } else if ("REPLICATE_UPDATE".equals(action)) {
                 // REPLICATE_UPDATE:userId:newBalance
                 String userId = parts[1];
-                int newBalance = Integer.parseInt(parts[2]);
+                double newBalance = Double.parseDouble(parts[2]);
 
                 // Update balance in local database
                 if (localDB.accountExists(userId)) {
@@ -461,11 +461,11 @@ public class ATMNode extends RicartNode {
             if (parts.length >= 8) {
                 // New schema SYNC
                 localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5],
-                        Integer.parseInt(parts[6]), parts[7]);
+                        Double.parseDouble(parts[6]), parts[7]);
                 count++;
             } else if (parts.length >= 5) {
                 // Legacy schema SYNC
-                localDB.upsertAccount(parts[0], parts[1], parts[2], Integer.parseInt(parts[3]), parts[4]);
+                localDB.upsertAccount(parts[0], parts[1], parts[2], Double.parseDouble(parts[3]), parts[4]);
                 count++;
             }
         }
@@ -577,14 +577,18 @@ public class ATMNode extends RicartNode {
             // Format: id:time:type:user:amt:target:node
             String[] parts = row.split("~"); // Using ~ as delimiter to avoid conflict with time colons
             if (parts.length >= 7) {
-                list.add(new Database.Transaction(
-                        Integer.parseInt(parts[0]),
-                        parts[1],
-                        parts[2],
-                        parts[3],
-                        parts[4],
-                        parts[5],
-                        Integer.parseInt(parts[6])));
+                try {
+                    list.add(new Database.Transaction(
+                            Integer.parseInt(parts[0]),
+                            parts[1],
+                            parts[2],
+                            parts[3],
+                            parts[4],
+                            parts[5],
+                            Integer.parseInt(parts[6])));
+                } catch (NumberFormatException e) {
+                    System.err.println("  ⚠️ Admin: Skipping malformed log entry: " + row);
+                }
             }
         }
         return list;
@@ -619,20 +623,20 @@ public class ATMNode extends RicartNode {
      */
     @Override
     protected void onCriticalSection() {
-        System.out.println("⚡ CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
+        System.out.println("⚡ [v2.0-FLOAT] CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
 
         try {
             // 1. DEPOSIT
             if ("DEPOSIT".equals(nextOperation)) {
-                int amountObj = Integer.parseInt(opAmount);
+                double amountObj = Double.parseDouble(opAmount);
                 if (amountObj <= 0) {
                     lastTransactionResult = "FAIL:INVALID_AMOUNT";
                     return;
                 }
 
-                int currentBalance = localDB.getBalance(opUser);
-                if (currentBalance != -1) {
-                    int newBalance = currentBalance + amountObj;
+                double currentBalance = localDB.getBalance(opUser);
+                if (currentBalance != -1.0) {
+                    double newBalance = currentBalance + amountObj;
                     localDB.updateBalance(opUser, newBalance);
 
                     // Broadcast replication
@@ -650,16 +654,16 @@ public class ATMNode extends RicartNode {
 
             // 2. WITHDRAW
             else if ("WITHDRAW".equals(nextOperation)) {
-                int amountObj = Integer.parseInt(opAmount);
+                double amountObj = Double.parseDouble(opAmount);
                 if (amountObj <= 0) {
                     lastTransactionResult = "FAIL:INVALID_AMOUNT";
                     return;
                 }
 
-                int currentBalance = localDB.getBalance(opUser);
-                if (currentBalance != -1) {
+                double currentBalance = localDB.getBalance(opUser);
+                if (currentBalance != -1.0) {
                     if (currentBalance >= amountObj) {
-                        int newBalance = currentBalance - amountObj;
+                        double newBalance = currentBalance - amountObj;
                         localDB.updateBalance(opUser, newBalance);
 
                         // Broadcast replication
@@ -680,19 +684,19 @@ public class ATMNode extends RicartNode {
 
             // 3. TRANSFER
             else if ("TRANSFER".equals(nextOperation)) {
-                int amountObj = Integer.parseInt(opAmount);
+                double amountObj = Double.parseDouble(opAmount);
                 if (amountObj <= 0) {
                     lastTransactionResult = "FAIL:INVALID_AMOUNT";
                     return;
                 }
 
-                int senderBalance = localDB.getBalance(opUser);
-                int receiverBalance = localDB.getBalance(opTarget);
+                double senderBalance = localDB.getBalance(opUser);
+                double receiverBalance = localDB.getBalance(opTarget);
 
                 // Validate sender has funds AND receiver exists
-                if (senderBalance != -1 && receiverBalance != -1 && senderBalance >= amountObj) {
-                    int newSenderBalance = senderBalance - amountObj;
-                    int newReceiverBalance = receiverBalance + amountObj;
+                if (senderBalance != -1.0 && receiverBalance != -1.0 && senderBalance >= amountObj) {
+                    double newSenderBalance = senderBalance - amountObj;
+                    double newReceiverBalance = receiverBalance + amountObj;
 
                     localDB.updateBalance(opUser, newSenderBalance);
                     localDB.updateBalance(opTarget, newReceiverBalance);
@@ -716,8 +720,9 @@ public class ATMNode extends RicartNode {
                 }
             }
         } catch (Exception e) {
-            lastTransactionResult = "FAIL:EXCEPTION:" + e.getMessage();
+            System.err.println("❌ EXCEPTION in onCriticalSection: " + e.getMessage());
             e.printStackTrace();
+            lastTransactionResult = "FAIL:EXCEPTION:" + e.getMessage();
         }
     }
 

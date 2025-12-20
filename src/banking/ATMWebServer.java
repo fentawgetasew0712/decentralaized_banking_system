@@ -143,9 +143,9 @@ public class ATMWebServer {
                 System.out.println("WEB API: Received " + type + " for " + user);
 
                 // API Level Validation
-                int valAmt = 0;
+                double valAmt = 0;
                 try {
-                    valAmt = Integer.parseInt(amount);
+                    valAmt = Double.parseDouble(amount);
                     if (valAmt <= 0) {
                         throw new NumberFormatException("Negative amount");
                     }

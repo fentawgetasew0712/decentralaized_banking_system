@@ -275,21 +275,25 @@ public class RicartNode {
         // Send request message to all other nodes
         // Format: REQUEST:Timestamp:NodeID:ResourceID
         String message = MSG_REQUEST + ":" + requestTimestamp + ":" + nodeId + ":" + resourceId;
+        int nodesMessaged = 0;
         for (int targetId : allNodes.keySet()) {
             if (targetId != nodeId) {
-                sendMessage(targetId, message);
+                if (sendMessage(targetId, message)) {
+                    nodesMessaged++;
+                }
             }
         }
 
         // TIMEOUT LOGIC: Wait for replies using wait/notify instead of sleep
         long startTime = System.currentTimeMillis();
-        long timeout = 10000; // 10 seconds timeout
+        long timeout = 2000; // Reduced to 2 seconds for better responsiveness
 
         synchronized (this) {
-            while (requestingCS && repliesReceived < (N - 1)) {
+            while (requestingCS && repliesReceived < nodesMessaged) {
                 long timeLeft = timeout - (System.currentTimeMillis() - startTime);
                 if (timeLeft <= 0) {
-                    System.err.println("!!! TIMEOUT WAITING FOR REPLIES (" + repliesReceived + "/" + (N - 1) + ") !!!");
+                    System.err.println(
+                            "!!! TIMEOUT WAITING FOR REPLIES (" + repliesReceived + "/" + nodesMessaged + ") !!!");
                     System.err.println("!!! ASSUMING CRITICAL SECTION PERMISSION !!!");
                     break; // Force entry on timeout
                 }
@@ -317,15 +321,15 @@ public class RicartNode {
         sendMessage(targetId, message);
     }
 
-    private void sendMessage(int targetId, String message) {
+    protected boolean sendMessage(int targetId, String message) {
         InetSocketAddress targetAddress = allNodes.get(targetId);
         if (targetAddress == null)
-            return;
+            return false;
 
         if (targetAddress.isUnresolved()) {
             System.err.println("Node " + nodeId + " WARNING: Cannot resolve address for Node " + targetId +
                     " (" + targetAddress.getHostName() + "). Skipping.");
-            return;
+            return false;
         }
 
         try {
@@ -337,9 +341,11 @@ public class RicartNode {
                 out.println(message);
             }
             socket.close();
+            return true;
         } catch (IOException e) {
             System.err.println("Node " + nodeId + " failed to communicate with Node " + targetId +
                     " (" + targetAddress + "). Node is assumed down.");
+            return false;
         }
     }
 
