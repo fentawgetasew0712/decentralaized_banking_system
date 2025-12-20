@@ -163,7 +163,36 @@ h3 {
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Floating Label Animation */
+/* Prefix Implementation */
+.input-group.has-prefix .prefix {
+    position: absolute;
+    left: 16px;
+    bottom: 11px;
+    color: var(--text-primary);
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.input-group.has-prefix input {
+    padding-left: 16px; /* Initially same */
+}
+
+.input-group.has-prefix input:focus,
+.input-group.has-prefix input:not(:placeholder-shown) {
+    padding-left: 55px; /* Shift for prefix */
+}
+
+.input-group.has-prefix input:focus~.prefix,
+.input-group.has-prefix input:not(:placeholder-shown)~.prefix {
+    opacity: 1;
+}
+
+.input-group.has-prefix input:focus+label,
+.input-group.has-prefix input:not(:placeholder-shown)+label {
+    left: 14px;
+}
 .input-group input:focus+label,
 .input-group input:not(:placeholder-shown)+label {
     top: 6px;
