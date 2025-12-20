@@ -63,14 +63,16 @@
                         </div>
                     </div>
                     <div class="filter-group">
-                        <label>Time Period</label>
-                        <select id="filter-period" onchange="applyFilters()">
-                            <option value="all">All Time</option>
-                            <option value="today">Today</option>
-                            <option value="week">Last 7 Days</option>
-                            <option value="month">Last 30 Days</option>
-                            <option value="specific">Specific Date</option>
-                        </select>
+                        <div class="input-group">
+                            <select id="filter-period" onchange="applyFilters()">
+                                <option value="all">All Time</option>
+                                <option value="today">Today</option>
+                                <option value="week">Last 7 Days</option>
+                                <option value="month">Last 30 Days</option>
+                                <option value="specific">Specific Date</option>
+                            </select>
+                            <label>Time Period</label>
+                        </div>
                     </div>
                     <div class="filter-group">
                         <!-- Label spacer to align button -->
@@ -80,12 +82,19 @@
                     </div>
 
                     <!-- Specific Time Input (Hidden by default) -->
-                    <div id="specific-time-container"
-                        style="display: none; grid-column: 1 / -1; gap: 1rem; align-items: center; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-top: -10px;">
-                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Select Date:</span>
-                        <input type="date" id="filter-specific" onchange="applyFilters()" style="margin:0;">
-                        <span style="color: var(--text-secondary); font-size: 0.8rem; margin-left: auto;">(Matches full
-                            day)</span>
+                    <div id="specific-time-container">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <span style="color: var(--accent); font-weight: 600; font-size: 0.9rem;">
+                                <i class="fas fa-calendar-alt"></i> Select Date:
+                            </span>
+                            <div class="input-group" style="margin-bottom: 0; min-width: 200px;">
+                                <input type="date" id="filter-specific" onchange="applyFilters()">
+                            </div>
+                        </div>
+                        <span
+                            style="color: var(--text-secondary); font-size: 0.8rem; margin-left: auto; letter-spacing: 0.5px;">
+                            (Logs filtered for the entire chosen day)
+                        </span>
                     </div>
                 </div>
 
@@ -114,7 +123,7 @@
 
             <!-- Right: User Monitor -->
             <div class="card">
-                <h3>User Directory</h3>
+                <h3>Customer List</h3>
                 <div style="overflow-x: auto; margin-top: 1rem;">
                     <table id="users-table">
                         <thead>

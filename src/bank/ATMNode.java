@@ -289,6 +289,10 @@ public class ATMNode extends RicartNode {
         System.out.println("📥 ATM " + getNodeId() + ": Received replication: " + message);
 
         String[] parts = message.split(":");
+        if (parts.length < 2) {
+            System.err.println("  ⚠️ ATM " + getNodeId() + ": Malformed replication message: " + message);
+            return;
+        }
         String action = parts[0];
 
         try {

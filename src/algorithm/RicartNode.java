@@ -150,9 +150,23 @@ public class RicartNode {
                 }
 
                 String[] parts = message.split(":");
+                if (parts.length < 3) {
+                    // Log the malformed message but don't crash
+                    System.err.println("Node " + nodeId + " received malformed message: " + message);
+                    return;
+                }
+
                 String msgType = parts[0];
-                int receivedTimestamp = Integer.parseInt(parts[1]);
-                int senderId = Integer.parseInt(parts[2]);
+                int receivedTimestamp;
+                int senderId;
+
+                try {
+                    receivedTimestamp = Integer.parseInt(parts[1]);
+                    senderId = Integer.parseInt(parts[2]);
+                } catch (NumberFormatException nfe) {
+                    System.err.println("Node " + nodeId + " failed to parse message timestamps/IDs: " + message);
+                    return;
+                }
 
                 // Update clock based on received message timestamp
                 updateClock(receivedTimestamp);
