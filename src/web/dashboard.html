@@ -32,7 +32,7 @@
                     <div class="card action-card">
                         <h3>Withdraw</h3>
                         <div class="input-group">
-                            <input type="number" id="withdraw-amount" placeholder=" "
+                            <input type="number" id="withdraw-amount" placeholder=" " min="0.01" step="0.01"
                                 oninput="this.className=this.value?'valid':''">
                             <label>Amount to Withdraw</label>
                         </div>
@@ -43,7 +43,7 @@
                     <div class="card action-card">
                         <h3>Deposit</h3>
                         <div class="input-group">
-                            <input type="number" id="deposit-amount" placeholder=" "
+                            <input type="number" id="deposit-amount" placeholder=" " min="0.01" step="0.01"
                                 oninput="this.className=this.value?'valid':''">
                             <label>Amount to Deposit</label>
                         </div>
@@ -59,7 +59,7 @@
                                 <label>Recipient Account ID</label>
                             </div>
                             <div class="input-group">
-                                <input type="number" id="transfer-amount" placeholder=" "
+                                <input type="number" id="transfer-amount" placeholder=" " min="0.01" step="0.01"
                                     oninput="this.className=this.value?'valid':''">
                                 <label>Transfer Amount</label>
                             </div>
@@ -118,7 +118,7 @@
                 const res = await fetch(`/api/balance?user=${currentUser}&t=${Date.now()}`);
                 if (res.status !== 200) throw new Error("Failed");
                 const data = await res.text();
-                const formattedBalance = Number(data).toLocaleString();
+                const formattedBalance = Number(data).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 document.getElementById('balance').innerText = formattedBalance;
                 log("Balance updated: $" + formattedBalance);
             } catch (e) {
@@ -143,8 +143,8 @@
                 target = document.getElementById('transfer-target').value;
             }
 
-            if (!amount) {
-                alert("Please enter an amount");
+            if (!amount || Number(amount) <= 0) {
+                alert("Please enter a valid amount greater than zero");
                 return;
             }
             if (type === 'TRANSFER' && !target) {

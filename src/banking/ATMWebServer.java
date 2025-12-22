@@ -142,6 +142,22 @@ public class ATMWebServer {
 
                 System.out.println("WEB API: Received " + type + " for " + user);
 
+                // API Level Validation
+                double valAmt = 0;
+                try {
+                    valAmt = Double.parseDouble(amount);
+                    if (valAmt <= 0) {
+                        throw new NumberFormatException("Negative amount");
+                    }
+                } catch (NumberFormatException e) {
+                    String errResponse = "FAIL:INVALID_AMOUNT";
+                    t.sendResponseHeaders(200, errResponse.length());
+                    OutputStream os = t.getResponseBody();
+                    os.write(errResponse.getBytes());
+                    os.close();
+                    return;
+                }
+
                 // Synchronize to prevent race conditions on the single ATMNode instance
                 String response;
                 synchronized (atmNode) {
