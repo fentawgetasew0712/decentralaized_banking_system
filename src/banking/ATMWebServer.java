@@ -197,16 +197,14 @@ public class ATMWebServer {
                 System.out.println("DEBUG Register JSON: " + json);
 
                 String user = extractJson(json, "user");
-                String fName = extractJson(json, "fName");
-                String sName = extractJson(json, "sName");
-                String tName = extractJson(json, "tName");
+                String fullName = extractJson(json, "fullName");
                 String phone = extractJson(json, "phone");
                 String pass = extractJson(json, "pass");
                 String amount = extractJson(json, "amount");
 
                 System.out.println("DEBUG Register Parsed: User=" + user + ", Amt='" + amount + "'");
 
-                String result = atmNode.register(user, fName, sName, tName, phone, pass, amount);
+                String result = atmNode.register(user, fullName, phone, pass, amount);
 
                 t.sendResponseHeaders(200, result.length());
                 OutputStream os = t.getResponseBody();
@@ -230,13 +228,11 @@ public class ATMWebServer {
 
                 String json = buf.toString();
                 String user = extractJson(json, "user");
-                String fName = extractJson(json, "fName");
-                String sName = extractJson(json, "sName");
-                String tName = extractJson(json, "tName");
+                String fullName = extractJson(json, "fullName");
                 String phone = extractJson(json, "phone");
                 String newPass = extractJson(json, "newPass");
 
-                String result = atmNode.forgetPassword(user, fName, sName, tName, phone, newPass);
+                String result = atmNode.forgetPassword(user, fullName, phone, newPass);
 
                 t.sendResponseHeaders(200, result.length());
                 OutputStream os = t.getResponseBody();

@@ -102,8 +102,7 @@ public class ATMNode extends RicartNode {
     /**
      * Register new account with REPLICATION to all peers
      */
-    public String register(String user, String fName, String sName, String tName, String phone, String pass,
-            String amount) {
+    public String register(String user, String fullName, String phone, String pass, String amount) {
         try {
             double initialBalance = Double.parseDouble(amount);
 
@@ -126,21 +125,18 @@ public class ATMNode extends RicartNode {
             }
 
             // Create account in LOCAL database first
-            String result = localDB.createAccountExtended(user, fName, sName, tName, phone, pass, initialBalance,
-                    "user");
+            String result = localDB.createAccountExtended(user, fullName, phone, pass, initialBalance, "user");
 
             if ("OK".equals(result)) {
                 // REPLICATE to all peer nodes
-                // New Format: REPLICATE_CREATE:userId:fName:sName:tName:phone:pass:balance:role
-                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + fName + ":" + sName + ":" + tName + ":"
-                        + phone + ":" + pass + ":" + initialBalance
-                        + ":user";
+                // New Format: REPLICATE_CREATE:userId:fullName:phone:pass:balance:role
+                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + fullName + ":" + phone + ":" + pass + ":"
+                        + initialBalance + ":user";
                 broadcastReplication(replicationMsg);
 
                 System.out.println("✅ ATM " + getNodeId() + ": Account created and replicated to all peers");
                 return "OK:CREATED";
             } else {
-                // Return specific error from database (e.g. FAIL:EXISTS, FAIL:SQL_ERROR:...)
                 return result;
             }
 
@@ -153,11 +149,7 @@ public class ATMNode extends RicartNode {
      * Legacy register method for compatibility with any old calls
      */
     public String register(String user, String name, String pass, String amount) {
-        String[] parts = name.split(" ");
-        String fName = parts.length > 0 ? parts[0] : "";
-        String sName = parts.length > 1 ? parts[1] : "";
-        String tName = parts.length > 2 ? parts[2] : "";
-        return register(user, fName, sName, tName, "000", pass, amount);
+        return register(user, name, "000", pass, amount);
     }
 
     /**
@@ -297,36 +289,20 @@ public class ATMNode extends RicartNode {
 
         try {
             if ("REPLICATE_CREATE".equals(action)) {
-                // New Format:
-                // REPLICATE_CREATE:userId:fName:sName:tName:phone:password:balance:role
-                if (parts.length >= 8) {
+                // New Format: REPLICATE_CREATE:userId:fullName:phone:password:balance:role
+                if (parts.length >= 7) {
                     String userId = parts[1];
-                    String fName = parts[2];
-                    String sName = parts[3];
-                    String tName = parts[4];
-                    String phone = parts[5];
-                    String password = parts[6];
-                    double balance = Double.parseDouble(parts[7]);
-                    String role = parts.length > 8 ? parts[8] : "user";
+                    String fullName = parts[2];
+                    String phone = parts[3];
+                    String password = parts[4];
+                    double balance = Double.parseDouble(parts[5]);
+                    String role = parts.length > 6 ? parts[6] : "user";
 
                     if (!localDB.accountExists(userId)) {
-                        localDB.createAccount(userId, fName, sName, tName, phone, password, balance, role);
+                        localDB.createAccount(userId, fullName, phone, password, balance, role);
                         System.out.println("  ✅ Replicated account creation: " + userId + " (Role: " + role + ")");
                     }
-                } else {
-                    // Fallback to legacy format
-                    String userId = parts[1];
-                    String name = parts[2];
-                    String password = parts[3];
-                    double balance = Double.parseDouble(parts[4]);
-                    String role = parts.length > 5 ? parts[5] : "user";
-
-                    if (!localDB.accountExists(userId)) {
-                        localDB.createAccount(userId, name, password, balance, role);
-                        System.out.println("  ✅ Replicated account creation (Legacy): " + userId);
-                    }
                 }
-
             } else if ("REPLICATE_PASSWORD_UPDATE".equals(action)) {
                 // REPLICATE_PASSWORD_UPDATE:userId:newPasswordHash
                 String userId = parts[1];
@@ -458,10 +434,10 @@ public class ATMNode extends RicartNode {
         String[] accounts = data.split("\\|");
         for (String accStr : accounts) {
             String[] parts = accStr.split(":");
-            if (parts.length >= 8) {
-                // New schema SYNC
-                localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5],
-                        Double.parseDouble(parts[6]), parts[7]);
+            if (parts.length >= 6) {
+                // New schema SYNC: id:name:phone:pass:bal:role
+                localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3],
+                        Double.parseDouble(parts[4]), parts[5]);
                 count++;
             } else if (parts.length >= 5) {
                 // Legacy schema SYNC
@@ -571,7 +547,8 @@ public class ATMNode extends RicartNode {
                             parts[3],
                             parts[4],
                             parts[5],
-                            Integer.parseInt(parts[6])));
+                            Integer.parseInt(parts[6]),
+                            Integer.parseInt(parts[7])));
                 } catch (NumberFormatException e) {
                     System.err.println("  ⚠️ Admin: Skipping malformed log entry: " + row);
                 }
@@ -609,7 +586,7 @@ public class ATMNode extends RicartNode {
      * thanks to Ricart-Agrawala.
      */
     @Override
-    protected void onCriticalSection() {
+    protected void onCriticalSection(int timestamp) {
         System.out.println("⚡ [v2.0-FLOAT] CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
 
         try {
@@ -713,9 +690,9 @@ public class ATMNode extends RicartNode {
         }
     }
 
-    public String forgetPassword(String id, String fName, String sName, String tName, String phone, String newPass) {
+    public String forgetPassword(String id, String fullName, String phone, String newPass) {
         // 1. Verify details locally
-        if (localDB.verifyForgetDetails(id, fName, sName, tName, phone)) {
+        if (localDB.verifyForgetDetails(id, fullName, phone)) {
             // 2. Update locally
             localDB.updatePassword(id, newPass);
 

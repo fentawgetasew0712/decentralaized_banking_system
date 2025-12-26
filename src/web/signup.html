@@ -15,16 +15,8 @@
             <h1 style="color: var(--primary); margin-bottom: 2rem;">Create Account</h1>
 
             <div class="input-group">
-                <input type="text" id="firstName" placeholder=" ">
-                <label>First Name</label>
-            </div>
-            <div class="input-group">
-                <input type="text" id="secondName" placeholder=" ">
-                <label>Second Name</label>
-            </div>
-            <div class="input-group">
-                <input type="text" id="thirdName" placeholder=" ">
-                <label>Third Name</label>
+                <input type="text" id="fullName" placeholder=" ">
+                <label>Full Name</label>
             </div>
 
             <div class="input-group has-prefix">
@@ -121,9 +113,7 @@
         }
 
         async function register() {
-            const fName = document.getElementById('firstName').value;
-            const sName = document.getElementById('secondName').value;
-            const tName = document.getElementById('thirdName').value;
+            const fullName = document.getElementById('fullName').value;
             const phone = document.getElementById('phone').value;
             const id = document.getElementById('accountId').value;
             const pass = document.getElementById('password').value;
@@ -137,9 +127,7 @@
 
             // Get elements for highlighting
             const fields = {
-                'firstName': fName,
-                'secondName': sName,
-                'thirdName': tName,
+                'fullName': fullName,
                 'phone': phone,
                 'accountId': id,
                 'password': pass,
@@ -150,7 +138,7 @@
             // Clear previous highlighting
             Object.keys(fields).forEach(fid => document.getElementById(fid).classList.remove('invalid'));
 
-            if (!fName || !sName || !tName || !phone || !pass || !id || !amount || !confirm) {
+            if (!fullName || !phone || !pass || !id || !amount || !confirm) {
                 errorMsg.innerText = "All fields are required.";
                 // Highlight all empty fields
                 Object.keys(fields).forEach(fid => {
@@ -193,7 +181,7 @@
                 const response = await fetch('/api/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fName, sName, tName, phone, user: id, pass, amount })
+                    body: JSON.stringify({ fullName, phone, user: id, pass, amount })
                 });
 
                 const result = await response.text();

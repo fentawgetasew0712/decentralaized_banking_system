@@ -24,9 +24,6 @@ public class Database {
     public static class Account {
         public String id;
         public String name;
-        public String firstName;
-        public String secondName;
-        public String thirdName;
         public String phoneNumber;
         public String password;
         public double balance;
@@ -40,14 +37,10 @@ public class Database {
             this.role = role;
         }
 
-        public Account(String id, String firstName, String secondName, String thirdName, String phoneNumber,
-                String password, double balance, String role) {
+        public Account(String id, String name, String phoneNumber, String password, double balance, String role) {
             this.id = id;
-            this.firstName = firstName;
-            this.secondName = secondName;
-            this.thirdName = thirdName;
+            this.name = name;
             this.phoneNumber = phoneNumber;
-            this.name = firstName + " " + secondName + " " + thirdName;
             this.password = password;
             this.balance = balance;
             this.role = role;
@@ -110,9 +103,6 @@ public class Database {
         String sqlUsers = "CREATE TABLE IF NOT EXISTS users ("
                 + "id VARCHAR(12) PRIMARY KEY, "
                 + "name VARCHAR(100) NOT NULL, "
-                + "first_name VARCHAR(50), "
-                + "second_name VARCHAR(50), "
-                + "third_name VARCHAR(50), "
                 + "phone_number VARCHAR(20), "
                 + "password VARCHAR(100) NOT NULL, "
                 + "balance DOUBLE DEFAULT 0.0, "
@@ -133,14 +123,14 @@ public class Database {
             stmt.execute(sqlTrans);
 
             // Add new columns if they don't exist
-            String[] newCols = {
-                    "ALTER TABLE users ADD COLUMN first_name VARCHAR(50)",
-                    "ALTER TABLE users ADD COLUMN second_name VARCHAR(50)",
-                    "ALTER TABLE users ADD COLUMN third_name VARCHAR(50)",
+            String[] migrations = {
+                    "ALTER TABLE users DROP COLUMN first_name",
+                    "ALTER TABLE users DROP COLUMN second_name",
+                    "ALTER TABLE users DROP COLUMN third_name",
                     "ALTER TABLE users ADD COLUMN phone_number VARCHAR(20)",
                     "ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'"
             };
-            for (String colSql : newCols) {
+            for (String colSql : migrations) {
                 try {
                     stmt.execute(colSql);
                     System.out.println("Database Migration: Executed " + colSql);
@@ -181,24 +171,20 @@ public class Database {
         }
     }
 
-    public synchronized String createAccountExtended(String id, String fName, String sName, String tName, String phone,
+    public synchronized String createAccountExtended(String id, String name, String phone,
             String password, double initialBalance,
             String role) {
         if (conn == null)
             return "DATABASE_CONNECTION_ERROR";
 
-        String name = fName + " " + sName + " " + tName;
-        String sql = "INSERT INTO users (id, name, first_name, second_name, third_name, phone_number, password, balance, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO users (id, name, phone_number, password, balance, role) VALUES (?, ?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, id);
             pstmt.setString(2, name);
-            pstmt.setString(3, fName);
-            pstmt.setString(4, sName);
-            pstmt.setString(5, tName);
-            pstmt.setString(6, phone);
-            pstmt.setString(7, PasswordUtils.hash(password));
-            pstmt.setDouble(8, initialBalance);
-            pstmt.setString(9, role);
+            pstmt.setString(3, phone);
+            pstmt.setString(4, PasswordUtils.hash(password));
+            pstmt.setDouble(5, initialBalance);
+            pstmt.setString(6, role);
             pstmt.executeUpdate();
             return "OK";
         } catch (SQLException e) {
@@ -210,20 +196,16 @@ public class Database {
         }
     }
 
-    public synchronized boolean createAccount(String id, String fName, String sName, String tName, String phone,
+    public synchronized boolean createAccount(String id, String name, String phone,
             String password, double initialBalance,
             String role) {
-        return "OK".equals(createAccountExtended(id, fName, sName, tName, phone, password, initialBalance, role));
+        return "OK".equals(createAccountExtended(id, name, phone, password, initialBalance, role));
     }
 
     // Compat method for legacy replication or admin
     public synchronized boolean createAccount(String id, String name, String password, double initialBalance,
             String role) {
-        String[] parts = name.split(" ");
-        String fName = parts.length > 0 ? parts[0] : "";
-        String sName = parts.length > 1 ? parts[1] : "";
-        String tName = parts.length > 2 ? parts[2] : "";
-        return createAccount(id, fName, sName, tName, "000", password, initialBalance, role);
+        return createAccount(id, name, "000", password, initialBalance, role);
     }
 
     // Default version for regular users
@@ -263,9 +245,6 @@ public class Database {
                         rs.getString("password"),
                         rs.getDouble("balance"),
                         rs.getString("role"));
-                acc.firstName = rs.getString("first_name");
-                acc.secondName = rs.getString("second_name");
-                acc.thirdName = rs.getString("third_name");
                 acc.phoneNumber = rs.getString("phone_number");
                 return acc;
             }
@@ -314,9 +293,7 @@ public class Database {
                 if (sb.length() > 0)
                     sb.append("|");
                 sb.append(rs.getString("id")).append(":")
-                        .append(rs.getString("first_name")).append(":")
-                        .append(rs.getString("second_name")).append(":")
-                        .append(rs.getString("third_name")).append(":")
+                        .append(rs.getString("name")).append(":")
                         .append(rs.getString("phone_number")).append(":")
                         .append(rs.getString("password")).append(":")
                         .append(rs.getDouble("balance")).append(":")
@@ -331,39 +308,32 @@ public class Database {
     /**
      * Insert or Update account (Upsert) for synchronization
      */
-    public synchronized void upsertAccount(String id, String fName, String sName, String tName, String phone,
+    public synchronized void upsertAccount(String id, String name, String phone,
             String password, double balance, String role) {
         if (conn == null)
             return;
 
         if (accountExists(id)) {
-            String sql = "UPDATE users SET name=?, first_name=?, second_name=?, third_name=?, phone_number=?, password=?, balance=?, role=? WHERE id=?";
+            String sql = "UPDATE users SET name=?, phone_number=?, password=?, balance=?, role=? WHERE id=?";
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, fName + " " + sName + " " + tName);
-                pstmt.setString(2, fName);
-                pstmt.setString(3, sName);
-                pstmt.setString(4, tName);
-                pstmt.setString(5, phone);
-                pstmt.setString(6, password);
-                pstmt.setDouble(7, balance);
-                pstmt.setString(8, role);
-                pstmt.setString(9, id);
+                pstmt.setString(1, name);
+                pstmt.setString(2, phone);
+                pstmt.setString(3, password);
+                pstmt.setDouble(4, balance);
+                pstmt.setString(5, role);
+                pstmt.setString(6, id);
                 pstmt.executeUpdate();
             } catch (SQLException e) {
                 e.printStackTrace();
             }
         } else {
-            createAccount(id, fName, sName, tName, phone, password, balance, role);
+            createAccount(id, name, phone, password, balance, role);
         }
     }
 
     // Compat upsert
     public synchronized void upsertAccount(String id, String name, String password, double balance, String role) {
-        String[] parts = name.split(" ");
-        String fName = parts.length > 0 ? parts[0] : "";
-        String sName = parts.length > 1 ? parts[1] : "";
-        String tName = parts.length > 2 ? parts[2] : "";
-        upsertAccount(id, fName, sName, tName, "000", password, balance, role);
+        upsertAccount(id, name, "000", password, balance, role);
     }
 
     public synchronized void upsertAccount(String id, String name, String password, double balance) {
@@ -450,9 +420,6 @@ public class Database {
                         rs.getString("password"),
                         rs.getDouble("balance"),
                         rs.getString("role"));
-                acc.firstName = rs.getString("first_name");
-                acc.secondName = rs.getString("second_name");
-                acc.thirdName = rs.getString("third_name");
                 acc.phoneNumber = rs.getString("phone_number");
                 list.add(acc);
             }
@@ -462,16 +429,14 @@ public class Database {
         return list;
     }
 
-    public boolean verifyForgetDetails(String id, String fName, String sName, String tName, String phone) {
+    public boolean verifyForgetDetails(String id, String fullName, String phone) {
         if (conn == null)
             return false;
-        String sql = "SELECT * FROM users WHERE id = ? AND first_name = ? AND second_name = ? AND third_name = ? AND phone_number = ?";
+        String sql = "SELECT * FROM users WHERE id = ? AND name = ? AND phone_number = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, id);
-            pstmt.setString(2, fName);
-            pstmt.setString(3, sName);
-            pstmt.setString(4, tName);
-            pstmt.setString(5, phone);
+            pstmt.setString(2, fullName);
+            pstmt.setString(3, phone);
             ResultSet rs = pstmt.executeQuery();
             return rs.next();
         } catch (SQLException e) {
