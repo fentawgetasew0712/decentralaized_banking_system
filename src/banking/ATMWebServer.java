@@ -32,9 +32,9 @@ public class ATMWebServer {
         server.createContext("/api/login", new LoginHandler());
         server.createContext("/api/logout", new LogoutHandler());
         server.createContext("/api/register", new RegisterHandler());
+        server.createContext("/api/forget", new ForgetHandler());
 
         // Admin Endpoints
-        server.createContext("/api/admin/login", new AdminLoginHandler());
         server.createContext("/api/admin/logs", new AdminLogsHandler());
         server.createContext("/api/admin/users", new AdminUsersHandler());
         server.createContext("/api/admin/stats", new AdminStatsHandler());
@@ -142,6 +142,22 @@ public class ATMWebServer {
 
                 System.out.println("WEB API: Received " + type + " for " + user);
 
+                // API Level Validation
+                double valAmt = 0;
+                try {
+                    valAmt = Double.parseDouble(amount);
+                    if (valAmt <= 0) {
+                        throw new NumberFormatException("Negative amount");
+                    }
+                } catch (NumberFormatException e) {
+                    String errResponse = "FAIL:INVALID_AMOUNT";
+                    t.sendResponseHeaders(200, errResponse.length());
+                    OutputStream os = t.getResponseBody();
+                    os.write(errResponse.getBytes());
+                    os.close();
+                    return;
+                }
+
                 // Synchronize to prevent race conditions on the single ATMNode instance
                 String response;
                 synchronized (atmNode) {
@@ -181,13 +197,46 @@ public class ATMWebServer {
                 System.out.println("DEBUG Register JSON: " + json);
 
                 String user = extractJson(json, "user");
-                String name = extractJson(json, "name");
+                String fName = extractJson(json, "fName");
+                String sName = extractJson(json, "sName");
+                String tName = extractJson(json, "tName");
+                String phone = extractJson(json, "phone");
                 String pass = extractJson(json, "pass");
                 String amount = extractJson(json, "amount");
 
                 System.out.println("DEBUG Register Parsed: User=" + user + ", Amt='" + amount + "'");
 
-                String result = atmNode.register(user, name, pass, amount);
+                String result = atmNode.register(user, fName, sName, tName, phone, pass, amount);
+
+                t.sendResponseHeaders(200, result.length());
+                OutputStream os = t.getResponseBody();
+                os.write(result.getBytes());
+                os.close();
+            }
+        }
+    }
+
+    class ForgetHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange t) throws IOException {
+            if ("POST".equals(t.getRequestMethod())) {
+                InputStreamReader isr = new InputStreamReader(t.getRequestBody(), "utf-8");
+                BufferedReader br = new BufferedReader(isr);
+                StringBuilder buf = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) {
+                    buf.append(line);
+                }
+
+                String json = buf.toString();
+                String user = extractJson(json, "user");
+                String fName = extractJson(json, "fName");
+                String sName = extractJson(json, "sName");
+                String tName = extractJson(json, "tName");
+                String phone = extractJson(json, "phone");
+                String newPass = extractJson(json, "newPass");
+
+                String result = atmNode.forgetPassword(user, fName, sName, tName, phone, newPass);
 
                 t.sendResponseHeaders(200, result.length());
                 OutputStream os = t.getResponseBody();
@@ -252,34 +301,6 @@ public class ATMWebServer {
 
     // ================= ADMIN HANDLERS =================
 
-    class AdminLoginHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange t) throws IOException {
-            if ("POST".equals(t.getRequestMethod())) {
-                InputStreamReader isr = new InputStreamReader(t.getRequestBody(), "utf-8");
-                BufferedReader br = new BufferedReader(isr);
-                StringBuilder buf = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) {
-                    buf.append(line);
-                }
-                String json = buf.toString();
-                String pass = extractJson(json, "password");
-
-                String response = "FAIL";
-                // Hardcoded Admin Password for prototype
-                if ("admin123".equals(pass)) {
-                    response = "OK";
-                }
-
-                t.sendResponseHeaders(200, response.length());
-                OutputStream os = t.getResponseBody();
-                os.write(response.getBytes());
-                os.close();
-            }
-        }
-    }
-
     class AdminLogsHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange t) throws IOException {
@@ -314,16 +335,25 @@ public class ATMWebServer {
     class AdminUsersHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange t) throws IOException {
-            java.util.List<bank.Database.Account> users = atmNode.getLocalDB().getAllUsers();
+            java.util.List<bank.Database.Account> allUsers = atmNode.getLocalDB().getAllUsers();
             StringBuilder json = new StringBuilder("[");
-            for (int i = 0; i < users.size(); i++) {
-                bank.Database.Account acc = users.get(i);
+
+            // Filter out system admin (000000000000)
+            java.util.List<bank.Database.Account> customers = new java.util.ArrayList<>();
+            for (bank.Database.Account acc : allUsers) {
+                if (!acc.id.equals("000000000000")) {
+                    customers.add(acc);
+                }
+            }
+
+            for (int i = 0; i < customers.size(); i++) {
+                bank.Database.Account acc = customers.get(i);
                 json.append("{")
                         .append("\"id\":\"").append(acc.id).append("\",")
                         .append("\"name\":\"").append(acc.name).append("\",")
                         .append("\"balance\":").append(acc.balance)
                         .append("}");
-                if (i < users.size() - 1)
+                if (i < customers.size() - 1)
                     json.append(",");
             }
             json.append("]");
@@ -339,18 +369,23 @@ public class ATMWebServer {
     class AdminStatsHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange t) throws IOException {
-            java.util.List<bank.Database.Account> users = atmNode.getLocalDB().getAllUsers();
+            java.util.List<bank.Database.Account> allUsers = atmNode.getLocalDB().getAllUsers();
             // Use cluster-wide transactions for stats
             java.util.List<bank.Database.Transaction> logs = atmNode.getAllClusterTransactions();
 
             long totalReserves = 0;
-            for (bank.Database.Account acc : users) {
-                totalReserves += acc.balance;
+            int customerCount = 0;
+            for (bank.Database.Account acc : allUsers) {
+                // Exclude system admin from statistics
+                if (!acc.id.equals("000000000000")) {
+                    totalReserves += acc.balance;
+                    customerCount++;
+                }
             }
 
             StringBuilder json = new StringBuilder();
             json.append("{")
-                    .append("\"totalUsers\":").append(users.size()).append(",")
+                    .append("\"totalUsers\":").append(customerCount).append(",")
                     .append("\"totalReserves\":").append(totalReserves).append(",")
                     .append("\"totalTransactions\":").append(logs.size())
                     .append("}");

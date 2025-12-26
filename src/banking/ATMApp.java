@@ -98,8 +98,8 @@ public class ATMApp {
             webServer.start();
 
             System.out.println("=================================================");
-            System.out.println("OPEN YOUR BROWSER: http://localhost:" + webPort);
-            System.out.println("ADMIN PANEL:       http://localhost:" + webPort + "/admin_login.html");
+            System.out.println("BANKING PORTAL: http://localhost:" + webPort);
+            System.out.println("(Admins and Users login here)");
             System.out.println("=================================================");
 
         } catch (IOException e) {

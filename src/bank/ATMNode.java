@@ -61,8 +61,8 @@ public class ATMNode extends RicartNode {
      * Check balance from LOCAL database
      */
     public String checkBalance(String user) {
-        int balance = localDB.getBalance(user);
-        if (balance == -1) {
+        double balance = localDB.getBalance(user);
+        if (balance == -1.0) {
             return "Error";
         }
         return String.valueOf(balance);
@@ -79,9 +79,8 @@ public class ATMNode extends RicartNode {
         // 1. Check local database first (fastest)
         if (localDB.authenticate(user, pass)) {
             Database.Account acc = localDB.getAccount(user);
-            // activeSessions.add(user); // Session lock removed
-
-            return "OK:LOGIN_SUCCESS:" + acc.name;
+            // activeSessions.add(user); // Lock session -> REMOVED
+            return "OK:LOGIN_SUCCESS:" + acc.name + ":" + acc.role;
         }
 
         // 2. Query available peer nodes (fault tolerance)
@@ -91,10 +90,9 @@ public class ATMNode extends RicartNode {
         if (peerAccount != null) {
             // 3. Cache account locally for future logins (performance optimization)
             System.out.println("✅ ATM " + getNodeId() + ": Found account on peer, caching locally");
-            localDB.createAccount(user, peerAccount.name, peerAccount.password, peerAccount.balance);
-            // activeSessions.add(user); // Session lock removed
-
-            return "OK:LOGIN_SUCCESS:" + peerAccount.name;
+            localDB.createAccount(user, peerAccount.name, peerAccount.password, peerAccount.balance, peerAccount.role);
+            // activeSessions.add(user); // Lock session -> REMOVED
+            return "OK:LOGIN_SUCCESS:" + peerAccount.name + ":" + peerAccount.role;
         }
 
         // 4. Not found anywhere
@@ -104,9 +102,10 @@ public class ATMNode extends RicartNode {
     /**
      * Register new account with REPLICATION to all peers
      */
-    public String register(String user, String name, String pass, String amount) {
+    public String register(String user, String fName, String sName, String tName, String phone, String pass,
+            String amount) {
         try {
-            int initialBalance = Integer.parseInt(amount);
+            double initialBalance = Double.parseDouble(amount);
 
             // Validation
             if (initialBalance < 500) {
@@ -117,28 +116,48 @@ public class ATMNode extends RicartNode {
                 return "FAIL:INVALID_ID_FORMAT";
             }
 
+            if (!phone.matches("^9\\d{8}$")) {
+                return "FAIL:INVALID_PHONE_FORMAT";
+            }
+
             // Check if account already exists
             if (localDB.accountExists(user)) {
                 return "FAIL:EXISTS";
             }
 
             // Create account in LOCAL database first
-            boolean created = localDB.createAccount(user, name, pass, initialBalance);
+            String result = localDB.createAccountExtended(user, fName, sName, tName, phone, pass, initialBalance,
+                    "user");
 
-            if (created) {
+            if ("OK".equals(result)) {
                 // REPLICATE to all peer nodes
-                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + name + ":" + pass + ":" + initialBalance;
+                // New Format: REPLICATE_CREATE:userId:fName:sName:tName:phone:pass:balance:role
+                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + fName + ":" + sName + ":" + tName + ":"
+                        + phone + ":" + pass + ":" + initialBalance
+                        + ":user";
                 broadcastReplication(replicationMsg);
 
                 System.out.println("✅ ATM " + getNodeId() + ": Account created and replicated to all peers");
                 return "OK:CREATED";
             } else {
-                return "FAIL:CREATE_ERROR";
+                // Return specific error from database (e.g. FAIL:EXISTS, FAIL:SQL_ERROR:...)
+                return result;
             }
 
         } catch (NumberFormatException e) {
             return "FAIL:INVALID_AMOUNT";
         }
+    }
+
+    /**
+     * Legacy register method for compatibility with any old calls
+     */
+    public String register(String user, String name, String pass, String amount) {
+        String[] parts = name.split(" ");
+        String fName = parts.length > 0 ? parts[0] : "";
+        String sName = parts.length > 1 ? parts[1] : "";
+        String tName = parts.length > 2 ? parts[2] : "";
+        return register(user, fName, sName, tName, "000", pass, amount);
     }
 
     /**
@@ -174,13 +193,15 @@ public class ATMNode extends RicartNode {
                 String response = sendQueryToPeer(peerId, "QUERY_ACCOUNT:" + userId + ":" + password);
 
                 if (response != null && response.startsWith("ACCOUNT_FOUND:")) {
-                    // Parse: ACCOUNT_FOUND:name:balance
-                    String[] parts = response.split(":", 4);
-                    if (parts.length >= 4) {
+                    // Parse: ACCOUNT_FOUND:name:balance:role
+                    String[] parts = response.split(":", 5);
+                    if (parts.length >= 5) {
                         String name = parts[1];
-                        int balance = Integer.parseInt(parts[2]);
+                        double balance = Double.parseDouble(parts[2]);
+                        String role = parts[3];
+                        // Cache other fields if present (from updated peers)
                         System.out.println("  ✅ Found account on Node " + peerId);
-                        return new Database.Account(userId, name, password, balance);
+                        return new Database.Account(userId, name, password, balance, role);
                     }
                 }
             } catch (Exception e) {
@@ -268,28 +289,56 @@ public class ATMNode extends RicartNode {
         System.out.println("📥 ATM " + getNodeId() + ": Received replication: " + message);
 
         String[] parts = message.split(":");
+        if (parts.length < 2) {
+            System.err.println("  ⚠️ ATM " + getNodeId() + ": Malformed replication message: " + message);
+            return;
+        }
         String action = parts[0];
 
         try {
             if ("REPLICATE_CREATE".equals(action)) {
-                // REPLICATE_CREATE:userId:name:password:balance
-                String userId = parts[1];
-                String name = parts[2];
-                String password = parts[3];
-                int balance = Integer.parseInt(parts[4]);
+                // New Format:
+                // REPLICATE_CREATE:userId:fName:sName:tName:phone:password:balance:role
+                if (parts.length >= 8) {
+                    String userId = parts[1];
+                    String fName = parts[2];
+                    String sName = parts[3];
+                    String tName = parts[4];
+                    String phone = parts[5];
+                    String password = parts[6];
+                    double balance = Double.parseDouble(parts[7]);
+                    String role = parts.length > 8 ? parts[8] : "user";
 
-                // Create account in local database (if doesn't exist)
-                if (!localDB.accountExists(userId)) {
-                    localDB.createAccount(userId, name, password, balance);
-                    System.out.println("  ✅ Replicated account creation: " + userId);
+                    if (!localDB.accountExists(userId)) {
+                        localDB.createAccount(userId, fName, sName, tName, phone, password, balance, role);
+                        System.out.println("  ✅ Replicated account creation: " + userId + " (Role: " + role + ")");
+                    }
                 } else {
-                    System.out.println("  ⚠️  Account already exists: " + userId);
+                    // Fallback to legacy format
+                    String userId = parts[1];
+                    String name = parts[2];
+                    String password = parts[3];
+                    double balance = Double.parseDouble(parts[4]);
+                    String role = parts.length > 5 ? parts[5] : "user";
+
+                    if (!localDB.accountExists(userId)) {
+                        localDB.createAccount(userId, name, password, balance, role);
+                        System.out.println("  ✅ Replicated account creation (Legacy): " + userId);
+                    }
                 }
 
+            } else if ("REPLICATE_PASSWORD_UPDATE".equals(action)) {
+                // REPLICATE_PASSWORD_UPDATE:userId:newPasswordHash
+                String userId = parts[1];
+                String newPassHash = parts[2];
+                if (localDB.accountExists(userId)) {
+                    localDB.updatePasswordWithHash(userId, newPassHash);
+                    System.out.println("  ✅ Replicated password update: " + userId);
+                }
             } else if ("REPLICATE_UPDATE".equals(action)) {
                 // REPLICATE_UPDATE:userId:newBalance
                 String userId = parts[1];
-                int newBalance = Integer.parseInt(parts[2]);
+                double newBalance = Double.parseDouble(parts[2]);
 
                 // Update balance in local database
                 if (localDB.accountExists(userId)) {
@@ -386,7 +435,7 @@ public class ATMNode extends RicartNode {
     protected String onAccountQuery(String userId, String password) {
         if (localDB.authenticate(userId, password)) {
             Database.Account acc = localDB.getAccount(userId);
-            return "ACCOUNT_FOUND:" + acc.name + ":" + acc.balance;
+            return "ACCOUNT_FOUND:" + acc.name + ":" + acc.balance + ":" + acc.role;
         }
         return "ACCOUNT_NOT_FOUND";
     }
@@ -409,8 +458,14 @@ public class ATMNode extends RicartNode {
         String[] accounts = data.split("\\|");
         for (String accStr : accounts) {
             String[] parts = accStr.split(":");
-            if (parts.length >= 4) {
-                localDB.upsertAccount(parts[0], parts[1], parts[2], Integer.parseInt(parts[3]));
+            if (parts.length >= 8) {
+                // New schema SYNC
+                localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5],
+                        Double.parseDouble(parts[6]), parts[7]);
+                count++;
+            } else if (parts.length >= 5) {
+                // Legacy schema SYNC
+                localDB.upsertAccount(parts[0], parts[1], parts[2], Double.parseDouble(parts[3]), parts[4]);
                 count++;
             }
         }
@@ -507,16 +562,19 @@ public class ATMNode extends RicartNode {
         for (String row : rows) {
             // Format: id:time:type:user:amt:target:node
             String[] parts = row.split("~"); // Using ~ as delimiter to avoid conflict with time colons
-            if (parts.length >= 8) {
-                list.add(new Database.Transaction(
-                        Integer.parseInt(parts[0]),
-                        parts[1],
-                        parts[2],
-                        parts[3],
-                        parts[4],
-                        parts[5],
-                        Integer.parseInt(parts[6]),
-                        Integer.parseInt(parts[7])));
+            if (parts.length >= 7) {
+                try {
+                    list.add(new Database.Transaction(
+                            Integer.parseInt(parts[0]),
+                            parts[1],
+                            parts[2],
+                            parts[3],
+                            parts[4],
+                            parts[5],
+                            Integer.parseInt(parts[6])));
+                } catch (NumberFormatException e) {
+                    System.err.println("  ⚠️ Admin: Skipping malformed log entry: " + row);
+                }
             }
         }
         return list;
@@ -551,18 +609,21 @@ public class ATMNode extends RicartNode {
      * thanks to Ricart-Agrawala.
      */
     @Override
-    protected void onCriticalSection(int timestamp) {
-        System.out.println("\n⚡ CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
-        System.out.println("   🔒 LOCKED via Lamport Timestamp: " + timestamp);
-        System.out.println("   (Safe to perform exclusive operation now)\n");
+    protected void onCriticalSection() {
+        System.out.println("⚡ [v2.0-FLOAT] CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
 
         try {
             // 1. DEPOSIT
             if ("DEPOSIT".equals(nextOperation)) {
-                int currentBalance = localDB.getBalance(opUser);
-                if (currentBalance != -1) {
-                    int amountObj = Integer.parseInt(opAmount);
-                    int newBalance = currentBalance + amountObj;
+                double amountObj = Double.parseDouble(opAmount);
+                if (amountObj <= 0) {
+                    lastTransactionResult = "FAIL:INVALID_AMOUNT";
+                    return;
+                }
+
+                double currentBalance = localDB.getBalance(opUser);
+                if (currentBalance != -1.0) {
+                    double newBalance = currentBalance + amountObj;
                     localDB.updateBalance(opUser, newBalance);
 
                     // Broadcast replication
@@ -580,11 +641,16 @@ public class ATMNode extends RicartNode {
 
             // 2. WITHDRAW
             else if ("WITHDRAW".equals(nextOperation)) {
-                int currentBalance = localDB.getBalance(opUser);
-                if (currentBalance != -1) {
-                    int amountObj = Integer.parseInt(opAmount);
+                double amountObj = Double.parseDouble(opAmount);
+                if (amountObj <= 0) {
+                    lastTransactionResult = "FAIL:INVALID_AMOUNT";
+                    return;
+                }
+
+                double currentBalance = localDB.getBalance(opUser);
+                if (currentBalance != -1.0) {
                     if (currentBalance >= amountObj) {
-                        int newBalance = currentBalance - amountObj;
+                        double newBalance = currentBalance - amountObj;
                         localDB.updateBalance(opUser, newBalance);
 
                         // Broadcast replication
@@ -605,14 +671,19 @@ public class ATMNode extends RicartNode {
 
             // 3. TRANSFER
             else if ("TRANSFER".equals(nextOperation)) {
-                int amountObj = Integer.parseInt(opAmount);
-                int senderBalance = localDB.getBalance(opUser);
-                int receiverBalance = localDB.getBalance(opTarget);
+                double amountObj = Double.parseDouble(opAmount);
+                if (amountObj <= 0) {
+                    lastTransactionResult = "FAIL:INVALID_AMOUNT";
+                    return;
+                }
+
+                double senderBalance = localDB.getBalance(opUser);
+                double receiverBalance = localDB.getBalance(opTarget);
 
                 // Validate sender has funds AND receiver exists
-                if (senderBalance != -1 && receiverBalance != -1 && senderBalance >= amountObj) {
-                    int newSenderBalance = senderBalance - amountObj;
-                    int newReceiverBalance = receiverBalance + amountObj;
+                if (senderBalance != -1.0 && receiverBalance != -1.0 && senderBalance >= amountObj) {
+                    double newSenderBalance = senderBalance - amountObj;
+                    double newReceiverBalance = receiverBalance + amountObj;
 
                     localDB.updateBalance(opUser, newSenderBalance);
                     localDB.updateBalance(opTarget, newReceiverBalance);
@@ -636,8 +707,26 @@ public class ATMNode extends RicartNode {
                 }
             }
         } catch (Exception e) {
-            lastTransactionResult = "FAIL:EXCEPTION:" + e.getMessage();
+            System.err.println("❌ EXCEPTION in onCriticalSection: " + e.getMessage());
             e.printStackTrace();
+            lastTransactionResult = "FAIL:EXCEPTION:" + e.getMessage();
+        }
+    }
+
+    public String forgetPassword(String id, String fName, String sName, String tName, String phone, String newPass) {
+        // 1. Verify details locally
+        if (localDB.verifyForgetDetails(id, fName, sName, tName, phone)) {
+            // 2. Update locally
+            localDB.updatePassword(id, newPass);
+
+            // 3. Replicate to peers
+            String passHash = PasswordUtils.hash(newPass);
+            broadcastReplication("REPLICATE_PASSWORD_UPDATE:" + id + ":" + passHash);
+
+            System.out.println("✅ ATM " + getNodeId() + ": Password reset for " + id + " and replicated");
+            return "OK:PASSWORD_RESET";
+        } else {
+            return "FAIL:DETAILS_NOT_MATCHING";
         }
     }
 }

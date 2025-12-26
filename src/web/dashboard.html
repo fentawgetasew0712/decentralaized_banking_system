@@ -31,23 +31,41 @@
                 <div class="actions-grid">
                     <div class="card action-card">
                         <h3>Withdraw</h3>
-                        <input type="number" id="withdraw-amount" placeholder="Amount">
-                        <button class="btn-danger" onclick="performAction('WITHDRAW')">Withdraw</button>
+                        <div class="input-group">
+                            <input type="number" id="withdraw-amount" placeholder=" " min="0.01" step="0.01"
+                                oninput="this.className=this.value?'valid':''">
+                            <label>Amount to Withdraw</label>
+                        </div>
+                        <button id="btn-WITHDRAW" class="btn-danger"
+                            onclick="performAction('WITHDRAW')">Withdraw</button>
                     </div>
 
                     <div class="card action-card">
                         <h3>Deposit</h3>
-                        <input type="number" id="deposit-amount" placeholder="Amount">
-                        <button class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
+                        <div class="input-group">
+                            <input type="number" id="deposit-amount" placeholder=" " min="0.01" step="0.01"
+                                oninput="this.className=this.value?'valid':''">
+                            <label>Amount to Deposit</label>
+                        </div>
+                        <button id="btn-DEPOSIT" class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
                     </div>
 
                     <div class="card action-card" style="grid-column: span 2;">
-                        <h3>Transfer</h3>
-                        <div class="input-group">
-                            <input type="text" id="transfer-target" placeholder="Recipient Account (e.g. user2)">
-                            <input type="number" id="transfer-amount" placeholder="Amount">
-                            <button class="btn-primary" onclick="performAction('TRANSFER')">Transfer Funds</button>
+                        <h3>Transfer Funds</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px;">
+                            <div class="input-group">
+                                <input type="text" id="transfer-target" placeholder=" "
+                                    oninput="this.className=this.value?'valid':''">
+                                <label>Recipient Account ID</label>
+                            </div>
+                            <div class="input-group">
+                                <input type="number" id="transfer-amount" placeholder=" " min="0.01" step="0.01"
+                                    oninput="this.className=this.value?'valid':''">
+                                <label>Transfer Amount</label>
+                            </div>
                         </div>
+                        <button id="btn-TRANSFER" class="btn-primary" onclick="performAction('TRANSFER')">Confirm
+                            Transfer</button>
                     </div>
                 </div>
 
@@ -100,8 +118,9 @@
                 const res = await fetch(`/api/balance?user=${currentUser}&t=${Date.now()}`);
                 if (res.status !== 200) throw new Error("Failed");
                 const data = await res.text();
-                document.getElementById('balance').innerText = data;
-                log("Balance updated: $" + data);
+                const formattedBalance = Number(data).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                document.getElementById('balance').innerText = formattedBalance;
+                log("Balance updated: $" + formattedBalance);
             } catch (e) {
                 document.getElementById('balance').innerText = "Error";
                 log("Error: Could not connect to Bank Node.");
@@ -113,6 +132,9 @@
 
         async function performAction(type) {
             let amount, target = '';
+            const btn = document.getElementById(`btn-${type}`);
+            const originalText = btn.innerText;
+            const originalClass = btn.className;
 
             if (type === 'WITHDRAW') amount = document.getElementById('withdraw-amount').value;
             if (type === 'DEPOSIT') amount = document.getElementById('deposit-amount').value;
@@ -121,8 +143,8 @@
                 target = document.getElementById('transfer-target').value;
             }
 
-            if (!amount) {
-                alert("Please enter an amount");
+            if (!amount || Number(amount) <= 0) {
+                alert("Please enter a valid amount greater than zero");
                 return;
             }
             if (type === 'TRANSFER' && !target) {
@@ -130,6 +152,10 @@
                 return;
             }
 
+            // Show processing state
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+            btn.style.opacity = "0.7";
             log(`Requesting ${type} for ${currentUser}...`);
 
             try {
@@ -140,11 +166,46 @@
                 const result = await res.text();
                 log(result);
 
-                // Poll for balance update
-                setTimeout(refreshBalance, 2000);
-                setTimeout(refreshBalance, 5000); // Double check
+                // Check if successful
+                if (result.startsWith("OK")) {
+                    // Success state
+                    btn.className = "btn-success";
+                    btn.innerText = "Success ✓";
+                    btn.style.opacity = "1";
+
+                    // Poll for balance update
+                    setTimeout(refreshBalance, 1000);
+                    setTimeout(refreshBalance, 3000);
+                } else {
+                    // Failed state
+                    btn.className = "btn-danger";
+                    btn.innerText = "Failed ✗";
+                    btn.style.opacity = "1";
+                }
+
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                    btn.className = originalClass;
+                    btn.style.opacity = "1";
+                }, 3000);
+
             } catch (e) {
                 log("Action failed: Network Error");
+
+                // Network error state
+                btn.className = "btn-danger";
+                btn.innerText = "Failed ✗";
+                btn.style.opacity = "1";
+
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                    btn.className = originalClass;
+                    btn.style.opacity = "1";
+                }, 3000);
             }
         }
 
