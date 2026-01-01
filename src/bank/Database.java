@@ -100,6 +100,8 @@ public class Database {
     private void initDB() {
         if (conn == null)
             return;
+
+        // 1. Initial Table Creation with LATEST schema
         String sqlUsers = "CREATE TABLE IF NOT EXISTS users ("
                 + "id VARCHAR(30) PRIMARY KEY, "
                 + "name VARCHAR(100) NOT NULL, "
@@ -122,52 +124,57 @@ public class Database {
             stmt.execute(sqlUsers);
             stmt.execute(sqlTrans);
 
-            // Add new columns if they don't exist
-            String[] migrations = {
-                    "ALTER TABLE users DROP COLUMN first_name",
-                    "ALTER TABLE users DROP COLUMN second_name",
-                    "ALTER TABLE users DROP COLUMN third_name",
-                    "ALTER TABLE users ADD COLUMN phone_number VARCHAR(20)",
-                    "ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'",
-                    "ALTER TABLE users MODIFY COLUMN id VARCHAR(30)",
-                    "ALTER TABLE transactions MODIFY COLUMN user_id VARCHAR(30)",
-                    "ALTER TABLE transactions MODIFY COLUMN target_id VARCHAR(30)",
-                    "UPDATE users SET role = 'user' WHERE role IS NULL"
-            };
-            for (String colSql : migrations) {
-                try {
-                    stmt.execute(colSql);
-                    System.out.println("Database Migration: Executed " + colSql);
-                } catch (SQLException e) {
-                    // Column already exists - common in XAMPP environments
-                }
-            }
+            // 2. Automated Schema Evolution (Ensuring columns exist for existing databases)
+            ensureColumnExists("users", "phone_number", "VARCHAR(20)");
+            ensureColumnExists("users", "role", "VARCHAR(20) DEFAULT 'user'");
+            ensureColumnExists("users", "balance", "DOUBLE DEFAULT 0.0");
+            ensureColumnExists("transactions", "lamport_clock", "INT DEFAULT 0");
 
-            // MIGRATION: Change balance from INT to DOUBLE if needed
-            try {
-                stmt.execute("ALTER TABLE users MODIFY COLUMN balance DOUBLE DEFAULT 0.0");
-                System.out.println("Database Migration: Migrated balance column to DOUBLE");
-            } catch (SQLException e) {
-                System.err.println("Migration Note (Balance): " + e.getMessage());
-            }
+            // 3. Fix data types if they were legacy (INT -> DOUBLE)
+            stmt.executeUpdate("ALTER TABLE users MODIFY COLUMN balance DOUBLE DEFAULT 0.0");
+            stmt.executeUpdate("UPDATE users SET role = 'user' WHERE role IS NULL");
 
-            // Ensure NO OLD ADMIN (000000000000) exists
+            // 4. Cleanup old data
             stmt.executeUpdate("DELETE FROM users WHERE id = '000000000000'");
 
-            // Create or Update default admin account with proper role
+            // 5. Default Admin Initialization
             String checkAdmin = "SELECT * FROM users WHERE id = 'admin'";
             ResultSet rs = stmt.executeQuery(checkAdmin);
             if (!rs.next()) {
                 String insertAdmin = "INSERT INTO users (id, name, password, balance, role) VALUES ('admin', 'System Admin', '"
                         + PasswordUtils.hash("admin123") + "', 0, 'admin')";
                 stmt.executeUpdate(insertAdmin);
-                System.out.println("Database: Default admin account created (admin / admin123 [hashed])");
+                System.out.println("Database: Default admin account created (admin/admin123)");
             } else {
-                // Ensure the 'admin' ID has the 'admin' role
                 stmt.executeUpdate("UPDATE users SET role = 'admin' WHERE id = 'admin'");
             }
         } catch (SQLException e) {
             System.err.println("Init DB Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Helper to ensure a column exists in a table.
+     * Makes the system self-contained and plug-and-play.
+     */
+    private void ensureColumnExists(String tableName, String columnName, String definition) {
+        String checkSql = "SELECT COUNT(*) FROM information_schema.columns " +
+                "WHERE table_schema = ? AND table_name = ? AND column_name = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(checkSql)) {
+            pstmt.setString(1, dbName);
+            pstmt.setString(2, tableName);
+            pstmt.setString(3, columnName);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next() && rs.getInt(1) == 0) {
+                // Column missing, add it
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + definition);
+                    System.out.println("Database Migration: Added missing column [" + columnName + "] to table ["
+                            + tableName + "]");
+                }
+            }
+        } catch (SQLException e) {
+            // Log but don't fail, might be permission issue or already existing
         }
     }
 
@@ -297,11 +304,12 @@ public class Database {
             while (rs.next()) {
                 if (sb.length() > 0)
                     sb.append("|");
-                sb.append(rs.getString("id")).append(":")
-                        .append(rs.getString("name")).append(":")
-                        .append(rs.getString("phone_number")).append(":")
-                        .append(rs.getString("password")).append(":")
-                        .append(rs.getDouble("balance")).append(":")
+                // Using ~ as delimiter to avoid collision with names/other strings
+                sb.append(rs.getString("id")).append("~")
+                        .append(rs.getString("name")).append("~")
+                        .append(rs.getString("phone_number")).append("~")
+                        .append(rs.getString("password")).append("~")
+                        .append(rs.getDouble("balance")).append("~")
                         .append(rs.getString("role"));
             }
         } catch (SQLException e) {

@@ -473,11 +473,25 @@ public class ATMNode extends RicartNode {
         if (!accountsData.isEmpty()) {
             String[] accounts = accountsData.split("\\|");
             for (String accStr : accounts) {
-                String[] parts = accStr.split(":");
-                if (parts.length >= 6) {
-                    localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3],
-                            Double.parseDouble(parts[4]), parts[5]);
-                    accountCount++;
+                // Try splitting with newer ~ delimiter first, then fallback to :
+                String[] parts = accStr.contains("~") ? accStr.split("~") : accStr.split(":");
+
+                try {
+                    if (parts.length == 8) {
+                        // BACKWARD COMPATIBILITY: Handle old 3-name schema
+                        // (id:f:s:t:phone:pass:bal:role)
+                        String fullName = (parts[1] + " " + parts[2] + " " + parts[3]).trim();
+                        localDB.upsertAccount(parts[0], fullName, parts[4], parts[5],
+                                Double.parseDouble(parts[6]), parts[7]);
+                        accountCount++;
+                    } else if (parts.length >= 6) {
+                        // Standard NEW schema (id:name:phone:pass:bal:role)
+                        localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3],
+                                Double.parseDouble(parts[4]), parts[5]);
+                        accountCount++;
+                    }
+                } catch (Exception e) {
+                    System.err.println("  ⚠️ Skipping malformed account data: " + accStr + " (" + e.getMessage() + ")");
                 }
             }
         }
@@ -489,9 +503,13 @@ public class ATMNode extends RicartNode {
             for (String logStr : logs) {
                 String[] parts = logStr.split("~");
                 if (parts.length >= 7) {
-                    localDB.importTransaction(parts[0], parts[1], parts[2], parts[3],
-                            parts[4], Integer.parseInt(parts[5]), Integer.parseInt(parts[6]));
-                    logCount++;
+                    try {
+                        localDB.importTransaction(parts[0], parts[1], parts[2], parts[3],
+                                parts[4], Integer.parseInt(parts[5]), Integer.parseInt(parts[6]));
+                        logCount++;
+                    } catch (Exception e) {
+                        // skip
+                    }
                 }
             }
         }
