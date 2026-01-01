@@ -334,10 +334,10 @@ public class ATMWebServer {
             java.util.List<bank.Database.Account> allUsers = atmNode.getLocalDB().getAllUsers();
             StringBuilder json = new StringBuilder("[");
 
-            // Filter out system admin (000000000000)
+            // Filter to include ONLY regular users in the customer list
             java.util.List<bank.Database.Account> customers = new java.util.ArrayList<>();
             for (bank.Database.Account acc : allUsers) {
-                if (!acc.id.equals("000000000000")) {
+                if ("user".equalsIgnoreCase(acc.role)) {
                     customers.add(acc);
                 }
             }
@@ -372,8 +372,8 @@ public class ATMWebServer {
             long totalReserves = 0;
             int customerCount = 0;
             for (bank.Database.Account acc : allUsers) {
-                // Exclude system admin from statistics
-                if (!acc.id.equals("000000000000")) {
+                // Statistics should ONLY include regular users
+                if ("user".equalsIgnoreCase(acc.role)) {
                     totalReserves += acc.balance;
                     customerCount++;
                 }

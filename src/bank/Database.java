@@ -101,7 +101,7 @@ public class Database {
         if (conn == null)
             return;
         String sqlUsers = "CREATE TABLE IF NOT EXISTS users ("
-                + "id VARCHAR(12) PRIMARY KEY, "
+                + "id VARCHAR(30) PRIMARY KEY, "
                 + "name VARCHAR(100) NOT NULL, "
                 + "phone_number VARCHAR(20), "
                 + "password VARCHAR(100) NOT NULL, "
@@ -112,9 +112,9 @@ public class Database {
                 + "id INT AUTO_INCREMENT PRIMARY KEY, "
                 + "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
                 + "type VARCHAR(20), "
-                + "user_id VARCHAR(12), "
+                + "user_id VARCHAR(30), "
                 + "amount VARCHAR(20), "
-                + "target_id VARCHAR(12), "
+                + "target_id VARCHAR(30), "
                 + "node_id INT, "
                 + "lamport_clock INT DEFAULT 0)";
 
@@ -128,7 +128,11 @@ public class Database {
                     "ALTER TABLE users DROP COLUMN second_name",
                     "ALTER TABLE users DROP COLUMN third_name",
                     "ALTER TABLE users ADD COLUMN phone_number VARCHAR(20)",
-                    "ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'"
+                    "ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'",
+                    "ALTER TABLE users MODIFY COLUMN id VARCHAR(30)",
+                    "ALTER TABLE transactions MODIFY COLUMN user_id VARCHAR(30)",
+                    "ALTER TABLE transactions MODIFY COLUMN target_id VARCHAR(30)",
+                    "UPDATE users SET role = 'user' WHERE role IS NULL"
             };
             for (String colSql : migrations) {
                 try {
@@ -147,24 +151,20 @@ public class Database {
                 System.err.println("Migration Note (Balance): " + e.getMessage());
             }
 
-            // Create or Update default admin account
-            String checkAdmin = "SELECT * FROM users WHERE id = '000000000000'";
+            // Ensure NO OLD ADMIN (000000000000) exists
+            stmt.executeUpdate("DELETE FROM users WHERE id = '000000000000'");
+
+            // Create or Update default admin account with proper role
+            String checkAdmin = "SELECT * FROM users WHERE id = 'admin'";
             ResultSet rs = stmt.executeQuery(checkAdmin);
             if (!rs.next()) {
-                String insertAdmin = "INSERT INTO users (id, name, password, balance, role) VALUES ('000000000000', 'System Admin', '"
+                String insertAdmin = "INSERT INTO users (id, name, password, balance, role) VALUES ('admin', 'System Admin', '"
                         + PasswordUtils.hash("admin123") + "', 0, 'admin')";
                 stmt.executeUpdate(insertAdmin);
-                System.out.println("Database: Default admin account created (000000000000 / admin123 [hashed])");
+                System.out.println("Database: Default admin account created (admin / admin123 [hashed])");
             } else {
-                String currentPass = rs.getString("password");
-                if ("admin123".equals(currentPass)) {
-                    String updateAdmin = "UPDATE users SET password = ? WHERE id = '000000000000'";
-                    try (PreparedStatement pstmt = conn.prepareStatement(updateAdmin)) {
-                        pstmt.setString(1, PasswordUtils.hash("admin123"));
-                        pstmt.executeUpdate();
-                        System.out.println("Database: Migrated admin password to hash");
-                    }
-                }
+                // Ensure the 'admin' ID has the 'admin' role
+                stmt.executeUpdate("UPDATE users SET role = 'admin' WHERE id = 'admin'");
             }
         } catch (SQLException e) {
             System.err.println("Init DB Error: " + e.getMessage());
@@ -257,6 +257,11 @@ public class Database {
     public double getBalance(String id) {
         Account acc = getAccount(id);
         return (acc != null) ? acc.balance : -1.0;
+    }
+
+    public String getRole(String id) {
+        Account acc = getAccount(id);
+        return (acc != null) ? acc.role : null;
     }
 
     public boolean accountExists(String id) {
@@ -363,12 +368,12 @@ public class Database {
         }
     }
 
-    public synchronized void logTransaction(String type, String userId, String amount, String targetId,
+    public synchronized String logTransaction(String type, String userId, String amount, String targetId,
             int lamportClock) {
         if (conn == null)
-            return;
+            return null;
         String sql = "INSERT INTO transactions (type, user_id, amount, target_id, node_id, lamport_clock) VALUES (?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, type);
             pstmt.setString(2, userId);
             pstmt.setString(3, amount);
@@ -376,17 +381,33 @@ public class Database {
             pstmt.setInt(5, nodeId);
             pstmt.setInt(6, lamportClock);
             pstmt.executeUpdate();
-            System.out.println("📝 Database: Logged " + type + " for " + userId);
+
+            // Fetch the generated timestamp to return it for replication
+            try (ResultSet rs = pstmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    int lastId = rs.getInt(1);
+                    try (Statement stmt = conn.createStatement();
+                            ResultSet rsTime = stmt
+                                    .executeQuery("SELECT timestamp FROM transactions WHERE id = " + lastId)) {
+                        if (rsTime.next()) {
+                            String ts = rsTime.getString("timestamp");
+                            System.out.println("📝 Database: Logged " + type + " for " + userId + " at " + ts);
+                            return ts;
+                        }
+                    }
+                }
+            }
         } catch (SQLException e) {
             System.err.println("Log Error: " + e.getMessage());
         }
+        return null;
     }
 
     public java.util.List<Transaction> getAllTransactions() {
         java.util.List<Transaction> list = new java.util.ArrayList<>();
         if (conn == null)
             return list;
-        String sql = "SELECT * FROM transactions ORDER BY id DESC LIMIT 50";
+        String sql = "SELECT * FROM transactions ORDER BY id DESC LIMIT 100"; // Increased limit for better sync
         try (Statement stmt = conn.createStatement();
                 ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
@@ -404,6 +425,54 @@ public class Database {
             e.printStackTrace();
         }
         return list;
+    }
+
+    /**
+     * Check if a transaction already exists to avoid duplicates during sync.
+     * Uses a combination of timestamp, user, type and lamport clock.
+     */
+    public boolean transactionExists(String timestamp, String userId, String type, int lamportClock) {
+        if (conn == null)
+            return false;
+        String sql = "SELECT id FROM transactions WHERE timestamp = ? AND user_id = ? AND type = ? AND lamport_clock = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, timestamp);
+            pstmt.setString(2, userId);
+            pstmt.setString(3, type);
+            pstmt.setInt(4, lamportClock);
+            ResultSet rs = pstmt.executeQuery();
+            return rs.next();
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Import a transaction from a peer during sync.
+     */
+    public synchronized void importTransaction(String timestamp, String type, String userId, String amount,
+            String targetId, int nodeId, int lamportClock) {
+        if (conn == null)
+            return;
+
+        if (transactionExists(timestamp, userId, type, lamportClock)) {
+            return;
+        }
+
+        String sql = "INSERT INTO transactions (timestamp, type, user_id, amount, target_id, node_id, lamport_clock) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, timestamp);
+            pstmt.setString(2, type);
+            pstmt.setString(3, userId);
+            pstmt.setString(4, amount);
+            pstmt.setString(5, targetId != null ? targetId : "");
+            pstmt.setInt(6, nodeId);
+            pstmt.setInt(7, lamportClock);
+            pstmt.executeUpdate();
+            System.out.println("📥 Database: Imported transaction " + type + " for " + userId + " at " + timestamp);
+        } catch (SQLException e) {
+            System.err.println("Import Transaction Error: " + e.getMessage());
+        }
     }
 
     public java.util.List<Account> getAllUsers() {

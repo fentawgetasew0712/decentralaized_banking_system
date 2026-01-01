@@ -33,7 +33,7 @@
                         <h3>Withdraw</h3>
                         <div class="input-group">
                             <input type="number" id="withdraw-amount" placeholder=" " min="0.01" step="0.01"
-                                oninput="this.className=this.value?'valid':''">
+                                oninput="validateAmount(this)">
                             <label>Amount to Withdraw</label>
                         </div>
                         <button id="btn-WITHDRAW" class="btn-danger"
@@ -44,7 +44,7 @@
                         <h3>Deposit</h3>
                         <div class="input-group">
                             <input type="number" id="deposit-amount" placeholder=" " min="0.01" step="0.01"
-                                oninput="this.className=this.value?'valid':''">
+                                oninput="validateAmount(this)">
                             <label>Amount to Deposit</label>
                         </div>
                         <button id="btn-DEPOSIT" class="btn-success" onclick="performAction('DEPOSIT')">Deposit</button>
@@ -54,13 +54,12 @@
                         <h3>Transfer Funds</h3>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px;">
                             <div class="input-group">
-                                <input type="text" id="transfer-target" placeholder=" "
-                                    oninput="this.className=this.value?'valid':''">
+                                <input type="text" id="transfer-target" placeholder=" " oninput="validateId(this)">
                                 <label>Recipient Account ID</label>
                             </div>
                             <div class="input-group">
                                 <input type="number" id="transfer-amount" placeholder=" " min="0.01" step="0.01"
-                                    oninput="this.className=this.value?'valid':''">
+                                    oninput="validateAmount(this)">
                                 <label>Transfer Amount</label>
                             </div>
                         </div>
@@ -78,6 +77,31 @@
     </div>
 
     <script>
+        function validateId(input) {
+            const val = input.value;
+            if (val.length === 0) {
+                input.className = "";
+            } else if (/^\d+$/.test(val)) {
+                // Numeric ID: Must be exactly 12 digits
+                input.className = (val.length === 12) ? "valid" : "invalid";
+            } else if (/^[a-zA-Z0-9_]{3,20}$/.test(val)) {
+                // Alphanumeric ID (like 'admin'): 3-20 chars is valid
+                input.className = "valid";
+            } else {
+                input.className = "invalid";
+            }
+        }
+
+        function validateAmount(input) {
+            if (input.value.length === 0) {
+                input.className = "";
+            } else if (parseFloat(input.value) > 0) {
+                input.className = "valid";
+            } else {
+                input.className = "invalid";
+            }
+        }
+
         // Get user from storage
         const currentUser = localStorage.getItem('currentUser');
         const currentUserName = localStorage.getItem('currentUserName');

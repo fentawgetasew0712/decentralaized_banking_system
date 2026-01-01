@@ -111,7 +111,7 @@ public class ATMNode extends RicartNode {
                 return "FAIL:MIN_DEPOSIT_500";
             }
 
-            if (user.length() != 12 || !user.matches("\\d+")) {
+            if (user.length() < 3 || user.length() > 20 || !user.matches("^[a-zA-Z0-9_]+$")) {
                 return "FAIL:INVALID_ID_FORMAT";
             }
 
@@ -323,6 +323,23 @@ public class ATMNode extends RicartNode {
                 } else {
                     System.out.println("  ⚠️  Cannot update non-existent account: " + userId);
                 }
+            } else if ("REPLICATE_LOG".equals(action)) {
+                // Format: REPLICATE_LOG:timestamp~type~userId~amount~targetId~nodeId~lamport
+                if (parts.length >= 2) {
+                    String logPayload = parts[1];
+                    String[] logParts = logPayload.split("~");
+                    if (logParts.length >= 7) {
+                        localDB.importTransaction(
+                                logParts[0], // timestamp
+                                logParts[1], // type
+                                logParts[2], // userId
+                                logParts[3], // amount
+                                logParts[4], // targetId
+                                Integer.parseInt(logParts[5]), // nodeId
+                                Integer.parseInt(logParts[6]) // lamport
+                        );
+                    }
+                }
             }
         } catch (Exception e) {
             System.err.println("  ✗ Error processing replication: " + e.getMessage());
@@ -418,34 +435,68 @@ public class ATMNode extends RicartNode {
 
     @Override
     protected void onSyncRequest(PrintWriter out) {
-        String allData = localDB.getAllAccountsSerialized();
-        out.println("SYNC_RESPONSE:" + allData);
-        System.out.println("📤 ATM " + getNodeId() + ": Sent full DB dump to peer.");
+        String accounts = localDB.getAllAccountsSerialized();
+        java.util.List<Database.Transaction> myLogs = localDB.getAllTransactions();
+        StringBuilder logsSb = new StringBuilder();
+        for (int i = 0; i < myLogs.size(); i++) {
+            Database.Transaction t = myLogs.get(i);
+            if (i > 0)
+                logsSb.append("|");
+            // timestamp~type~user~amount~target~node~clock
+            logsSb.append(t.timestamp).append("~")
+                    .append(t.type).append("~")
+                    .append(t.userId).append("~")
+                    .append(t.amount).append("~")
+                    .append(t.targetId).append("~")
+                    .append(t.nodeId).append("~")
+                    .append(t.lamportClock);
+        }
+
+        // Combined Format: SYNC_RESPONSE:accountsData#transactionsData
+        out.println("SYNC_RESPONSE:" + accounts + "#" + logsSb.toString());
+        System.out.println("📤 ATM " + getNodeId() + ": Sent full DB dump (Accounts + Logs) to peer.");
     }
 
     @Override
     protected void onSyncResponse(String message) {
-        // Message: SYNC_RESPONSE:id:name:pass:bal|id:name...
-        String data = message.substring("SYNC_RESPONSE:".length());
-        if (data.isEmpty())
+        // Message Type: SYNC_RESPONSE:accounts#transactions
+        String payload = message.substring("SYNC_RESPONSE:".length());
+        if (payload.isEmpty())
             return;
 
-        int count = 0;
-        String[] accounts = data.split("\\|");
-        for (String accStr : accounts) {
-            String[] parts = accStr.split(":");
-            if (parts.length >= 6) {
-                // New schema SYNC: id:name:phone:pass:bal:role
-                localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3],
-                        Double.parseDouble(parts[4]), parts[5]);
-                count++;
-            } else if (parts.length >= 5) {
-                // Legacy schema SYNC
-                localDB.upsertAccount(parts[0], parts[1], parts[2], Double.parseDouble(parts[3]), parts[4]);
-                count++;
+        String[] dbParts = payload.split("#");
+        String accountsData = dbParts[0];
+        String logsData = (dbParts.length > 1) ? dbParts[1] : "";
+
+        // 1. Sync Accounts
+        int accountCount = 0;
+        if (!accountsData.isEmpty()) {
+            String[] accounts = accountsData.split("\\|");
+            for (String accStr : accounts) {
+                String[] parts = accStr.split(":");
+                if (parts.length >= 6) {
+                    localDB.upsertAccount(parts[0], parts[1], parts[2], parts[3],
+                            Double.parseDouble(parts[4]), parts[5]);
+                    accountCount++;
+                }
             }
         }
-        System.out.println("📥 ATM " + getNodeId() + ": Synced " + count + " accounts from peer.");
+
+        // 2. Sync Transactions
+        int logCount = 0;
+        if (!logsData.isEmpty()) {
+            String[] logs = logsData.split("\\|");
+            for (String logStr : logs) {
+                String[] parts = logStr.split("~");
+                if (parts.length >= 7) {
+                    localDB.importTransaction(parts[0], parts[1], parts[2], parts[3],
+                            parts[4], Integer.parseInt(parts[5]), Integer.parseInt(parts[6]));
+                    logCount++;
+                }
+            }
+        }
+        System.out.println("📥 ATM " + getNodeId() + ": Synced " + accountCount + " accounts and " + logCount
+                + " transactions from peer.");
     }
 
     /**
@@ -607,7 +658,12 @@ public class ATMNode extends RicartNode {
                     broadcastReplication("REPLICATE_UPDATE:" + opUser + ":" + newBalance);
 
                     // LOG TRANSACTION WITH TIMESTAMP
-                    localDB.logTransaction("DEPOSIT", opUser, opAmount, null, timestamp);
+                    String ts = localDB.logTransaction("DEPOSIT", opUser, opAmount, null, timestamp);
+                    if (ts != null) {
+                        // REPLICATE LOG: timestamp~type~user~amt~target~node~clock
+                        broadcastReplication("REPLICATE_LOG:" + ts + "~DEPOSIT~" + opUser + "~" + opAmount + "~null~"
+                                + getNodeId() + "~" + timestamp);
+                    }
 
                     lastTransactionResult = "OK:DEPOSIT_SUCCESS:NewBalance=" + newBalance;
                     System.out.println("✅ ATM " + getNodeId() + ": Deposited $" + amountObj + " to " + opUser);
@@ -634,7 +690,12 @@ public class ATMNode extends RicartNode {
                         broadcastReplication("REPLICATE_UPDATE:" + opUser + ":" + newBalance);
 
                         // LOG TRANSACTION WITH TIMESTAMP
-                        localDB.logTransaction("WITHDRAW", opUser, opAmount, null, timestamp);
+                        String ts = localDB.logTransaction("WITHDRAW", opUser, opAmount, null, timestamp);
+                        if (ts != null) {
+                            broadcastReplication(
+                                    "REPLICATE_LOG:" + ts + "~WITHDRAW~" + opUser + "~" + opAmount + "~null~"
+                                            + getNodeId() + "~" + timestamp);
+                        }
 
                         lastTransactionResult = "OK:WITHDRAW_SUCCESS:NewBalance=" + newBalance;
                         System.out.println("✅ ATM " + getNodeId() + ": Withdrew $" + amountObj + " from " + opUser);
@@ -656,6 +717,13 @@ public class ATMNode extends RicartNode {
 
                 double senderBalance = localDB.getBalance(opUser);
                 double receiverBalance = localDB.getBalance(opTarget);
+                String receiverRole = localDB.getRole(opTarget);
+
+                // Validation: Prevent transfers to admin accounts
+                if ("admin".equals(receiverRole)) {
+                    lastTransactionResult = "FAIL:CANNOT_TRANSFER_TO_ADMIN";
+                    return;
+                }
 
                 // Validate sender has funds AND receiver exists
                 if (senderBalance != -1.0 && receiverBalance != -1.0 && senderBalance >= amountObj) {
@@ -670,7 +738,12 @@ public class ATMNode extends RicartNode {
                     broadcastReplication("REPLICATE_UPDATE:" + opTarget + ":" + newReceiverBalance);
 
                     // LOG TRANSACTION WITH TIMESTAMP
-                    localDB.logTransaction("TRANSFER", opUser, opAmount, opTarget, timestamp);
+                    String ts = localDB.logTransaction("TRANSFER", opUser, opAmount, opTarget, timestamp);
+                    if (ts != null) {
+                        broadcastReplication(
+                                "REPLICATE_LOG:" + ts + "~TRANSFER~" + opUser + "~" + opAmount + "~" + opTarget
+                                        + "~" + getNodeId() + "~" + timestamp);
+                    }
 
                     lastTransactionResult = "OK:TRANSFER_SUCCESS:NewBalance=" + newSenderBalance;
                     System.out.println("✅ ATM " + getNodeId() + ": Transferred $" + amountObj + " from " + opUser
@@ -691,7 +764,13 @@ public class ATMNode extends RicartNode {
     }
 
     public String forgetPassword(String id, String fullName, String phone, String newPass) {
-        // 1. Verify details locally
+        // 1. Verify role - only users can use this feature
+        String role = localDB.getRole(id);
+        if (!"user".equals(role)) {
+            return "FAIL:NOT_A_CUSTOMER";
+        }
+
+        // 2. Verify details locally
         if (localDB.verifyForgetDetails(id, fullName, phone)) {
             // 2. Update locally
             localDB.updatePassword(id, newPass);
