@@ -540,113 +540,12 @@ public class ATMNode extends RicartNode {
     }
 
     /**
-     * Get ALL transactions from the ENTIRE cluster (Local + Remote)
+     * Get ALL transactions from the local replicated database.
+     * Since full replication is active, every node has a complete record of the
+     * cluster's history.
      */
-    public java.util.List<Database.Transaction> getAllClusterTransactions() {
-        // 1. Get Local Logs
-        java.util.List<Database.Transaction> allLogs = new java.util.ArrayList<>(localDB.getAllTransactions());
-
-        // 2. Query All Peers
-        for (int peerId : getAllNodes().keySet()) {
-            if (peerId == getNodeId())
-                continue;
-
-            try {
-                // Fetch logs from peer
-                System.out.println("  Admin: Fetching logs from Node " + peerId + "...");
-                java.util.List<Database.Transaction> peerLogs = requestPeerTransactions(peerId);
-                if (peerLogs != null) {
-                    allLogs.addAll(peerLogs);
-                }
-            } catch (Exception e) {
-                System.out.println("  ⚠️  Admin: Could not fetch logs from Node " + peerId);
-            }
-        }
-
-        // 3. Sort by Timestamp Descending
-        allLogs.sort((t1, t2) -> t2.timestamp.compareTo(t1.timestamp));
-
-        return allLogs;
-    }
-
-    private java.util.List<Database.Transaction> requestPeerTransactions(int peerId) {
-        InetSocketAddress targetAddress = getAllNodes().get(peerId);
-        if (targetAddress == null)
-            return null;
-
-        try {
-            Socket socket = new Socket();
-            socket.connect(new InetSocketAddress(targetAddress.getAddress(), targetAddress.getPort()), 500); // 500ms
-                                                                                                             // Connect
-                                                                                                             // Timeout
-
-            try (PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                    BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
-
-                out.println("QUERY_TRANSACTION_LOGS");
-
-                String response = in.readLine();
-                if (response != null && response.startsWith("LOGS_RESPONSE:")) {
-                    return parseTransactions(response.substring("LOGS_RESPONSE:".length()));
-                }
-            }
-            socket.close();
-        } catch (IOException e) {
-            // connection failed
-            return null;
-        }
-        return null;
-    }
-
-    private java.util.List<Database.Transaction> parseTransactions(String data) {
-        java.util.List<Database.Transaction> list = new java.util.ArrayList<>();
-        if (data.isEmpty())
-            return list;
-
-        String[] rows = data.split("\\|");
-        for (String row : rows) {
-            // Format: id:time:type:user:amt:target:node
-            String[] parts = row.split("~"); // Using ~ as delimiter to avoid conflict with time colons
-            if (parts.length >= 7) {
-                try {
-                    list.add(new Database.Transaction(
-                            Integer.parseInt(parts[0]),
-                            parts[1],
-                            parts[2],
-                            parts[3],
-                            parts[4],
-                            parts[5],
-                            Integer.parseInt(parts[6]),
-                            Integer.parseInt(parts[7])));
-                } catch (NumberFormatException e) {
-                    System.err.println("  ⚠️ Admin: Skipping malformed log entry: " + row);
-                }
-            }
-        }
-        return list;
-    }
-
-    // Handle incoming log request
-    @Override
-    protected void onLogQuery(PrintWriter out) {
-        java.util.List<Database.Transaction> myLogs = localDB.getAllTransactions();
-        StringBuilder sb = new StringBuilder("LOGS_RESPONSE:");
-
-        for (int i = 0; i < myLogs.size(); i++) {
-            Database.Transaction t = myLogs.get(i);
-            if (i > 0)
-                sb.append("|");
-            // id~time~type~user~amount~target~node
-            sb.append(t.id).append("~")
-                    .append(t.timestamp).append("~")
-                    .append(t.type).append("~")
-                    .append(t.userId).append("~")
-                    .append(t.amount).append("~")
-                    .append(t.targetId).append("~")
-                    .append(t.nodeId).append("~")
-                    .append(t.lamportClock);
-        }
-        out.println(sb.toString());
+    public java.util.List<bank.Database.Transaction> getAllClusterTransactions() {
+        return localDB.getAllTransactions();
     }
 
     /**
@@ -654,6 +553,7 @@ public class ATMNode extends RicartNode {
      * This is guaranteed to run on only ONE node at a time (or sequential)
      * thanks to Ricart-Agrawala.
      */
+
     @Override
     protected void onCriticalSection(int timestamp) {
         System.out.println("⚡ [v2.0-FLOAT] CRITICAL SECTION ENTERED by " + getNodeId() + " for " + nextOperation);
