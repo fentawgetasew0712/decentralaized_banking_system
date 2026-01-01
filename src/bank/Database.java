@@ -415,7 +415,7 @@ public class Database {
         java.util.List<Transaction> list = new java.util.ArrayList<>();
         if (conn == null)
             return list;
-        String sql = "SELECT * FROM transactions ORDER BY id DESC LIMIT 100"; // Increased limit for better sync
+        String sql = "SELECT * FROM transactions ORDER BY id DESC LIMIT 10000"; // Increased limit for better sync
         try (Statement stmt = conn.createStatement();
                 ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {

@@ -5,6 +5,9 @@ import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * ATMNode - DISTRIBUTED VERSION
@@ -357,18 +360,22 @@ public class ATMNode extends RicartNode {
         return super.getAllNodesMap();
     }
 
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
     @Override
     public void start() {
         super.start();
-        // Trigger initial sync with peers to get latest data
-        new Thread(this::syncWithPeers, "Sync-Thread").start();
+        // Trigger periodic sync with peers every 5 seconds
+        // Initial delay 0, repeat every 5 seconds
+        scheduler.scheduleAtFixedRate(this::syncWithPeers, 0, 5, TimeUnit.SECONDS);
     }
 
     /**
      * SYNC: Connect to peers and ask for their database
      */
     private void syncWithPeers() {
-        System.out.println("🔄 ATM " + getNodeId() + ": Starting Initial Sync...");
+        // Reduced logging to avoid spam, but still visible
+        // System.out.println("🔄 ATM " + getNodeId() + ": Running Periodic Sync...");
 
         // Simple strategy: Ask ALL peers, merge everything.
         // In a real system, you might ask just one or use a Merkle tree.
