@@ -130,18 +130,17 @@ public class ATMApp {
 
     private static void openBrowser(String url) {
         String os = System.getProperty("os.name").toLowerCase();
-        Runtime rt = Runtime.getRuntime();
 
         try {
             if (java.awt.Desktop.isDesktopSupported()
                     && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
                 java.awt.Desktop.getDesktop().browse(new URI(url));
             } else if (os.contains("win")) {
-                rt.exec("rundll32 url.dll,FileProtocolHandler " + url);
+                new ProcessBuilder("rundll32", "url.dll,FileProtocolHandler", url).start();
             } else if (os.contains("mac")) {
-                rt.exec("open " + url);
+                new ProcessBuilder("open", url).start();
             } else if (os.contains("nix") || os.contains("nux")) {
-                rt.exec("xdg-open " + url);
+                new ProcessBuilder("xdg-open", url).start();
             } else {
                 System.out.println("Please open your browser and go to: " + url);
             }
