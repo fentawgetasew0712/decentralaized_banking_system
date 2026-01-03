@@ -181,6 +181,12 @@ public class Database {
     public synchronized String createAccountExtended(String id, String name, String phone,
             String password, double initialBalance,
             String role) {
+        return createAccountWithHashExtended(id, name, phone, PasswordUtils.hash(password), initialBalance, role);
+    }
+
+    public synchronized String createAccountWithHashExtended(String id, String name, String phone,
+            String passHash, double initialBalance,
+            String role) {
         if (conn == null)
             return "DATABASE_CONNECTION_ERROR";
 
@@ -189,7 +195,7 @@ public class Database {
             pstmt.setString(1, id);
             pstmt.setString(2, name);
             pstmt.setString(3, phone);
-            pstmt.setString(4, PasswordUtils.hash(password));
+            pstmt.setString(4, passHash);
             pstmt.setDouble(5, initialBalance);
             pstmt.setString(6, role);
             pstmt.executeUpdate();
@@ -207,6 +213,12 @@ public class Database {
             String password, double initialBalance,
             String role) {
         return "OK".equals(createAccountExtended(id, name, phone, password, initialBalance, role));
+    }
+
+    public synchronized boolean createAccountWithHash(String id, String name, String phone,
+            String passHash, double initialBalance,
+            String role) {
+        return "OK".equals(createAccountWithHashExtended(id, name, phone, passHash, initialBalance, role));
     }
 
     // Compat method for legacy replication or admin
@@ -340,7 +352,9 @@ public class Database {
                 e.printStackTrace();
             }
         } else {
-            createAccount(id, name, phone, password, balance, role);
+            // IMPORTANT: Synchronization usually sends the already hashed password
+            // So we use createAccountWithHash to avoid double-hashing
+            createAccountWithHash(id, name, phone, password, balance, role);
         }
     }
 

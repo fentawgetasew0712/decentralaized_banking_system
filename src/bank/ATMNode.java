@@ -93,7 +93,8 @@ public class ATMNode extends RicartNode {
         if (peerAccount != null) {
             // 3. Cache account locally for future logins (performance optimization)
             System.out.println("✅ ATM " + getNodeId() + ": Found account on peer, caching locally");
-            localDB.createAccount(user, peerAccount.name, peerAccount.password, peerAccount.balance, peerAccount.role);
+            localDB.createAccountWithHash(user, peerAccount.name, "000", peerAccount.password, peerAccount.balance,
+                    peerAccount.role);
             // activeSessions.add(user); // Lock session -> REMOVED
             return "OK:LOGIN_SUCCESS:" + peerAccount.name + ":" + peerAccount.role;
         }
@@ -132,8 +133,10 @@ public class ATMNode extends RicartNode {
 
             if ("OK".equals(result)) {
                 // REPLICATE to all peer nodes
-                // New Format: REPLICATE_CREATE:userId:fullName:phone:pass:balance:role
-                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + fullName + ":" + phone + ":" + pass + ":"
+                // IMPORTANT: Broadcast the HASHED password, not plain text
+                String passHash = PasswordUtils.hash(pass);
+                // New Format: REPLICATE_CREATE:userId:fullName:phone:passHash:balance:role
+                String replicationMsg = "REPLICATE_CREATE:" + user + ":" + fullName + ":" + phone + ":" + passHash + ":"
                         + initialBalance + ":user";
                 broadcastReplication(replicationMsg);
 
@@ -302,7 +305,8 @@ public class ATMNode extends RicartNode {
                     String role = parts.length > 6 ? parts[6] : "user";
 
                     if (!localDB.accountExists(userId)) {
-                        localDB.createAccount(userId, fullName, phone, password, balance, role);
+                        // Use createAccountWithHash because peer sends already hashed password
+                        localDB.createAccountWithHash(userId, fullName, phone, password, balance, role);
                         System.out.println("  ✅ Replicated account creation: " + userId + " (Role: " + role + ")");
                     }
                 }

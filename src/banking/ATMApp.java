@@ -4,6 +4,8 @@ import bank.ATMNode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Properties;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,22 +53,37 @@ public class ATMApp {
             }
         }
 
-        // 3. Ask User for Identity
+        // 3. Ask User for Identity (or use from args)
         int myId = -1;
-        try (Scanner scanner = new Scanner(System.in)) {
-            System.out.println("Available Node IDs: " + allNodes.keySet());
-            while (true) {
-                System.out.print("Enter YOUR Node ID (e.g. 1, 2, or 3): ");
-                try {
-                    String input = scanner.next();
-                    myId = Integer.parseInt(input);
-                    if (allNodes.containsKey(myId)) {
-                        break;
-                    } else {
-                        System.out.println("Error: ID " + myId + " is not in the configuration. Try again.");
+        if (args.length > 0) {
+            try {
+                myId = Integer.parseInt(args[0]);
+                if (!allNodes.containsKey(myId)) {
+                    System.err.println(
+                            "Error: Node ID " + myId + " not found in config. Falling back to manual entry...");
+                    myId = -1;
+                }
+            } catch (NumberFormatException e) {
+                System.err.println("Error: Invalid ID from command line. Falling back to manual entry...");
+            }
+        }
+
+        if (myId == -1) {
+            try (Scanner scanner = new Scanner(System.in)) {
+                System.out.println("Available Node IDs: " + allNodes.keySet());
+                while (true) {
+                    System.out.print("Enter YOUR Node ID (e.g. 1, 2, or 3): ");
+                    try {
+                        String inputStr = scanner.next();
+                        myId = Integer.parseInt(inputStr);
+                        if (allNodes.containsKey(myId)) {
+                            break;
+                        } else {
+                            System.out.println("Error: ID " + myId + " is not in the configuration. Try again.");
+                        }
+                    } catch (NumberFormatException e) {
+                        System.out.println("Error: Invalid input. Please enter a NUMBER (1, 2, etc.).");
                     }
-                } catch (NumberFormatException e) {
-                    System.out.println("Error: Invalid input. Please enter a NUMBER (1, 2, etc.), not an IP address.");
                 }
             }
         }
@@ -98,12 +115,38 @@ public class ATMApp {
             webServer.start();
 
             System.out.println("=================================================");
-            System.out.println("BANKING PORTAL: http://localhost:" + webPort);
+            String portalUrl = "http://localhost:" + webPort;
+            System.out.println("BANKING PORTAL: " + portalUrl);
             System.out.println("(Admins and Users login here)");
             System.out.println("=================================================");
 
+            // 7. Auto-Open Browser
+            openBrowser(portalUrl);
+
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    private static void openBrowser(String url) {
+        String os = System.getProperty("os.name").toLowerCase();
+        Runtime rt = Runtime.getRuntime();
+
+        try {
+            if (java.awt.Desktop.isDesktopSupported()
+                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                java.awt.Desktop.getDesktop().browse(new URI(url));
+            } else if (os.contains("win")) {
+                rt.exec("rundll32 url.dll,FileProtocolHandler " + url);
+            } else if (os.contains("mac")) {
+                rt.exec("open " + url);
+            } else if (os.contains("nix") || os.contains("nux")) {
+                rt.exec("xdg-open " + url);
+            } else {
+                System.out.println("Please open your browser and go to: " + url);
+            }
+        } catch (IOException | URISyntaxException e) {
+            System.err.println("Failed to open browser: " + e.getMessage());
         }
     }
 }
