@@ -25,9 +25,10 @@
                 <span class="prefix">+251</span>
             </div>
 
-            <div class="input-group">
+            <div class="input-group has-prefix">
                 <input type="text" id="accountId" placeholder=" " oninput="validateId(this)">
                 <label>Account ID / Username</label>
+                <span class="prefix">1000</span>
             </div>
 
             <div class="input-group">
@@ -60,11 +61,11 @@
     <script>
         function validateId(input) {
             const val = input.value;
+            // The validation now checks the "rest" after the 1000 prefix
             if (val.length === 0) {
                 input.className = "";
-            } else if (/^\d+$/.test(val)) {
-                input.className = (val.length === 12) ? "valid" : "invalid";
-            } else if (/^[a-zA-Z0-9_]{3,20}$/.test(val)) {
+            } else if (/^[a-zA-Z0-9_]{3,16}$/.test(val)) {
+                // Total length will be 4 (1000) + 3 to 16 = 7 to 20
                 input.className = "valid";
             } else {
                 input.className = "invalid";
@@ -162,11 +163,13 @@
                 return;
             }
 
-            if (!/^[a-zA-Z0-9_]{3,20}$/.test(id)) {
-                errorMsg.innerText = "Error: Account ID must be 3-20 characters alphanumeric.";
+            if (!/^[a-zA-Z0-9_]{3,16}$/.test(id)) {
+                errorMsg.innerText = "Error: Account ID (after 1000) must be 3-16 characters alphanumeric.";
                 document.getElementById('accountId').classList.add('invalid');
                 return;
             }
+
+            const finalId = "1000" + id;
 
             if (parseFloat(amount) < 500) {
                 errorMsg.innerText = "Initial Deposit must be GREATER than 500.";
@@ -184,7 +187,7 @@
                 const response = await fetch('/api/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fullName, phone, user: id, pass, amount })
+                    body: JSON.stringify({ fullName, phone, user: finalId, pass, amount })
                 });
 
                 const result = await response.text();
