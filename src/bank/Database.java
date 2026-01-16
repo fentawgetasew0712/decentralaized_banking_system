@@ -142,11 +142,12 @@ public class Database {
             ResultSet rs = stmt.executeQuery(checkAdmin);
             if (!rs.next()) {
                 String insertAdmin = "INSERT INTO users (id, name, password, balance, role) VALUES ('admin', 'System Admin', '"
-                        + PasswordUtils.hash("admin123") + "', 0, 'admin')";
+                        + PasswordUtils.hash("password") + "', 0, 'admin')";
                 stmt.executeUpdate(insertAdmin);
-                System.out.println("Database: Default admin account created (admin/admin123)");
+                System.out.println("Database: Default admin account created (admin/password)");
             } else {
-                stmt.executeUpdate("UPDATE users SET role = 'admin' WHERE id = 'admin'");
+                stmt.executeUpdate("UPDATE users SET role = 'admin', password = '" + PasswordUtils.hash("password")
+                        + "' WHERE id = 'admin'");
             }
         } catch (SQLException e) {
             System.err.println("Init DB Error: " + e.getMessage());
